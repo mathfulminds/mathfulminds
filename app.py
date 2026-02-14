@@ -1,6 +1,6 @@
 import streamlit as st
-from openai import OpenAI, AuthenticationError
-import base64
+import google.generativeai as genai
+from PIL import Image
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Mathful Minds", page_icon="🧠")
@@ -15,76 +15,66 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- AUTHENTICATION ---
-# We try to get the key from secrets, but we don't crash if it fails
-api_key = st.secrets.get("OPENAI_API_KEY")
-
-# If no secret found, or if we need to override it
-if not api_key:
-    api_key = st.sidebar.text_input("⚠️ API Key Missing. Enter it here:", type="password")
+api_key = st.secrets.get("GEMINI_API_KEY")
 
 if not api_key:
-    st.warning("Please enter your OpenAI API Key in the sidebar to start.")
+    api_key = st.sidebar.text_input("⚠️ Google API Key Missing. Enter it here:", type="password")
+
+if not api_key:
+    st.warning("Please enter your Google API Key to start.")
     st.stop()
 
-client = OpenAI(api_key=api_key)
+# Configure Google Gemini
+genai.configure(api_key=api_key)
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 # --- SYSTEM PROMPT ---
-SYSTEM_PROMPT = """
+# We prepend this to every request to keep the AI focused
+SYSTEM_INSTRUCTION = """
 You are Mathful, an expert AI math tutor.
-1. Use LaTeX for math ($x^2$).
+1. Use LaTeX for math expressions (e.g., $x^2$).
 2. Ask guiding questions; do not solve immediately.
-3. Watch for misconceptions in Ratios & Proportions.
+3. If an image is provided, analyze the handwriting carefully.
 """
 
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-
-def encode_image(uploaded_file):
-    return base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
-
-def get_ai_response(messages):
-    try:
-        stream = client.chat.completions.create(
-            model="gpt-4o-mini", 
-            messages=messages, 
-            stream=True
-        )
-        return st.write_stream(stream)
-    except AuthenticationError:
-        st.error("❌ Authentication Failed: Your API Key is invalid.")
-        st.info("Please check your Secrets or enter a new key in the sidebar.")
-        return None
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
-        return None
+    st.session_state.messages = []
 
 # --- UI ---
 st.markdown('<div class="main-title">Mathful Minds</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">AI Tutor for Middle School Math</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Powered by Google Gemini (Free Tier)</div>', unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["📸 Upload Photo", "⌨️ Type Problem"])
 
+# --- TAB 1: UPLOAD ---
 with tab1:
     uploaded_file = st.file_uploader("Upload a math problem", type=["png", "jpg", "jpeg"])
     if uploaded_file:
-        st.image(uploaded_file, caption="Uploaded Image")
+        image = Image.open(uploaded_file)
+        st.image(image, caption="Uploaded Image", use_column_width=True)
+        
         if st.button("Solve Image"):
-            base64_image = encode_image(uploaded_file)
-            st.session_state.messages.append({
-                "role": "user",
-                "content": [{"type": "text", "text": "Help me solve this."}, 
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}]
-            })
+            # Add user message to history
+            st.session_state.messages.append({"role": "user", "content": "Help me solve this math problem."})
+            
             with st.chat_message("assistant"):
-                response = get_ai_response(st.session_state.messages)
-            if response:
-                st.session_state.messages.append({"role": "assistant", "content": response})
+                with st.spinner("Analyzing handwriting..."):
+                    # Gemini handles images natively + text instruction
+                    response = model.generate_content([SYSTEM_INSTRUCTION, "Solve this:", image])
+                    st.markdown(response.text)
+                    
+            # Add AI response to history
+            st.session_state.messages.append({"role": "model", "content": response.text})
 
+# --- TAB 2: TYPE ---
 with tab2:
     text_input = st.text_area("Type your problem:")
     if st.button("Solve Text") and text_input:
         st.session_state.messages.append({"role": "user", "content": text_input})
+        
         with st.chat_message("assistant"):
-            response = get_ai_response(st.session_state.messages)
-        if response:
-            st.session_state.messages.append({"role": "assistant", "content": response})
+             with st.spinner("Thinking..."):
+                response = model.generate_content([SYSTEM_INSTRUCTION, text_input])
+                st.markdown(response.text)
+        
+        st.session_state.messages.append({"role": "model", "content": response.text})
