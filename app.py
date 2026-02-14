@@ -18,24 +18,28 @@ st.markdown("""
 api_key = st.secrets.get("GEMINI_API_KEY")
 
 if not api_key:
+    # Fallback to sidebar if secrets fail
     api_key = st.sidebar.text_input("⚠️ Google API Key Missing. Enter it here:", type="password")
 
 if not api_key:
     st.warning("Please enter your Google API Key to start.")
     st.stop()
 
-# Configure Google Gemini
-genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-1.5-flash')
-
 # --- SYSTEM PROMPT ---
-# We prepend this to every request to keep the AI focused
 SYSTEM_INSTRUCTION = """
 You are Mathful, an expert AI math tutor.
 1. Use LaTeX for math expressions (e.g., $x^2$).
 2. Ask guiding questions; do not solve immediately.
 3. If an image is provided, analyze the handwriting carefully.
 """
+
+# Configure Google Gemini
+# FIX: We pass the system instruction here during setup!
+genai.configure(api_key=api_key)
+model = genai.GenerativeModel(
+    model_name='gemini-1.5-flash',
+    system_instruction=SYSTEM_INSTRUCTION
+)
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -54,17 +58,17 @@ with tab1:
         st.image(image, caption="Uploaded Image", use_column_width=True)
         
         if st.button("Solve Image"):
-            # Add user message to history
             st.session_state.messages.append({"role": "user", "content": "Help me solve this math problem."})
             
             with st.chat_message("assistant"):
                 with st.spinner("Analyzing handwriting..."):
-                    # Gemini handles images natively + text instruction
-                    response = model.generate_content([SYSTEM_INSTRUCTION, "Solve this:", image])
-                    st.markdown(response.text)
-                    
-            # Add AI response to history
-            st.session_state.messages.append({"role": "model", "content": response.text})
+                    try:
+                        # Send just the image and the prompt
+                        response = model.generate_content(["Solve this problem step by step:", image])
+                        st.markdown(response.text)
+                        st.session_state.messages.append({"role": "model", "content": response.text})
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
 # --- TAB 2: TYPE ---
 with tab2:
@@ -74,7 +78,10 @@ with tab2:
         
         with st.chat_message("assistant"):
              with st.spinner("Thinking..."):
-                response = model.generate_content([SYSTEM_INSTRUCTION, text_input])
-                st.markdown(response.text)
-        
-        st.session_state.messages.append({"role": "model", "content": response.text})
+                try:
+                    # Send just the text
+                    response = model.generate_content(text_input)
+                    st.markdown(response.text)
+                    st.session_state.messages.append({"role": "model", "content": response.text})
+                except Exception as e:
+                    st.error(f"Error: {e}")
