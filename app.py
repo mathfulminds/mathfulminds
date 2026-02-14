@@ -1,5 +1,5 @@
 import streamlit as st
-from openai import OpenAI
+from openai import OpenAI, AuthenticationError
 import base64
 
 # --- CONFIGURATION ---
@@ -14,16 +14,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- AUTHENTICATION (The Fix) ---
-# Check if the key is in the "Vault" (Secrets)
-if "OPENAI_API_KEY" in st.secrets:
-    api_key = st.secrets["OPENAI_API_KEY"]
-else:
-    # If not in vault, ask for it in the sidebar
-    api_key = st.sidebar.text_input("OpenAI API Key", type="password")
+# --- AUTHENTICATION ---
+# We try to get the key from secrets, but we don't crash if it fails
+api_key = st.secrets.get("OPENAI_API_KEY")
+
+# If no secret found, or if we need to override it
+if not api_key:
+    api_key = st.sidebar.text_input("⚠️ API Key Missing. Enter it here:", type="password")
 
 if not api_key:
-    st.warning("⚠️ key missing. Please add it to Secrets or the Sidebar.")
+    st.warning("Please enter your OpenAI API Key in the sidebar to start.")
     st.stop()
 
 client = OpenAI(api_key=api_key)
@@ -41,6 +41,22 @@ if "messages" not in st.session_state:
 
 def encode_image(uploaded_file):
     return base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+
+def get_ai_response(messages):
+    try:
+        stream = client.chat.completions.create(
+            model="gpt-4o-mini", 
+            messages=messages, 
+            stream=True
+        )
+        return st.write_stream(stream)
+    except AuthenticationError:
+        st.error("❌ Authentication Failed: Your API Key is invalid.")
+        st.info("Please check your Secrets or enter a new key in the sidebar.")
+        return None
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
+        return None
 
 # --- UI ---
 st.markdown('<div class="main-title">Mathful Minds</div>', unsafe_allow_html=True)
@@ -60,15 +76,15 @@ with tab1:
                             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}]
             })
             with st.chat_message("assistant"):
-                stream = client.chat.completions.create(model="gpt-4o-mini", messages=st.session_state.messages, stream=True)
-                response = st.write_stream(stream)
-            st.session_state.messages.append({"role": "assistant", "content": response})
+                response = get_ai_response(st.session_state.messages)
+            if response:
+                st.session_state.messages.append({"role": "assistant", "content": response})
 
 with tab2:
     text_input = st.text_area("Type your problem:")
     if st.button("Solve Text") and text_input:
         st.session_state.messages.append({"role": "user", "content": text_input})
         with st.chat_message("assistant"):
-            stream = client.chat.completions.create(model="gpt-4o-mini", messages=st.session_state.messages, stream=True)
-            response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+            response = get_ai_response(st.session_state.messages)
+        if response:
+            st.session_state.messages.append({"role": "assistant", "content": response})
