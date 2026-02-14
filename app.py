@@ -1,6 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
+import time
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Mathful Minds", page_icon="🧠")
@@ -16,7 +17,6 @@ st.markdown("""
 
 # --- AUTHENTICATION ---
 api_key = st.secrets.get("GEMINI_API_KEY")
-
 if not api_key:
     api_key = st.sidebar.text_input("⚠️ Google API Key Missing. Enter it here:", type="password")
 
@@ -27,8 +27,8 @@ if not api_key:
 # --- MODEL SETUP ---
 genai.configure(api_key=api_key)
 
-# WE ARE USING THE MODEL YOU FOUND IN DIAGNOSTICS
-MODEL_NAME = 'gemini-2.0-flash'
+# SWITCHING TO THE STABLE MODEL (This has higher limits)
+MODEL_NAME = 'gemini-flash-latest'
 
 SYSTEM_INSTRUCTION = """
 You are Mathful, an expert AI math tutor.
@@ -43,14 +43,14 @@ try:
         system_instruction=SYSTEM_INSTRUCTION
     )
 except Exception as e:
-    st.error(f"Error connecting to model: {e}")
+    st.error(f"Error setting up model: {e}")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 # --- UI ---
 st.markdown('<div class="main-title">Mathful Minds</div>', unsafe_allow_html=True)
-st.markdown(f'<div class="subtitle">Powered by Google {MODEL_NAME}</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="subtitle">Powered by Google Gemini (Free Tier)</div>', unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["📸 Upload Photo", "⌨️ Type Problem"])
 
@@ -67,11 +67,14 @@ with tab1:
             with st.chat_message("assistant"):
                 with st.spinner("Analyzing handwriting..."):
                     try:
+                        # We add a tiny delay to be polite to the server
+                        time.sleep(1)
                         response = model.generate_content(["Solve this problem step by step:", image])
                         st.markdown(response.text)
                         st.session_state.messages.append({"role": "model", "content": response.text})
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        st.error("⏳ Traffic Jam! The server is busy. Please wait 10 seconds and try again.")
+                        st.caption(f"Details: {e}")
 
 # --- TAB 2: TYPE ---
 with tab2:
@@ -82,8 +85,10 @@ with tab2:
         with st.chat_message("assistant"):
              with st.spinner("Thinking..."):
                 try:
+                    time.sleep(1)
                     response = model.generate_content(text_input)
                     st.markdown(response.text)
                     st.session_state.messages.append({"role": "model", "content": response.text})
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error("⏳ Traffic Jam! The server is busy. Please wait 10 seconds and try again.")
+                    st.caption(f"Details: {e}")
