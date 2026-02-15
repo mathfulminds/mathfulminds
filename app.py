@@ -112,4 +112,4 @@ with tab_draw:
         canvas_result = st_canvas(stroke_width=3, stroke_color="#000", background_color="#fff", height=250, width=500, key="canvas")
         if canvas_result.image_data is not None and canvas_result.json_data is not None:
              if len(canvas_result.json_data["objects"]) > 0:
-                input_image = Image.fromarray(canvas_result.image_data.
+                input_image = Image.fromarray(canvas_result.image_data.)
