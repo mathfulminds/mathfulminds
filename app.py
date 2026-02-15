@@ -28,25 +28,6 @@ st.markdown("""
         letter-spacing: -1px;
     }
     
-    /* POP-OVER BUTTON STYLING */
-    div[data-testid="stPopover"] > button {
-        background-color: #FFFFFF;
-        color: #1E293B;
-        border: 1px solid #E2E8F0;
-        box-shadow: 0 2px 0 #CBD5E1;
-        font-size: 1.1rem;
-        font-weight: 600;
-        border-radius: 8px;
-        width: 100%;
-        min-height: 50px;
-    }
-    div[data-testid="stPopover"] > button:hover {
-        background-color: #F8FAFC;
-        border-color: #94A3B8;
-        color: #0F172A;
-    }
-    
-    /* STANDARD BUTTON STYLING */
     div.stButton > button {
         background-color: #FFFFFF;
         color: #1E293B;
@@ -61,9 +42,8 @@ st.markdown("""
     div.stButton > button:hover {
         background-color: #F8FAFC;
         border-color: #94A3B8;
+        color: #0F172A;
     }
-
-    /* Primary Action Button (Solve) override */
     div[data-testid="stButton"] > button[kind="primary"] {
         background-color: #0F172A;
         color: white;
@@ -72,8 +52,6 @@ st.markdown("""
         padding: 10px 20px;
         font-size: 1.1rem;
     }
-    
-    /* Locked State */
     .locked-state {
         color: #94A3B8;
         font-style: italic;
@@ -102,8 +80,26 @@ if "user_problem" not in st.session_state: st.session_state.user_problem = ""
 
 # --- HELPER FUNCTIONS ---
 def add_text(text):
-    """Directly appends text to the problem string"""
     st.session_state.user_problem += text
+
+# --- SAFETY HELPER: Parse Option Data ---
+# This ensures we never crash, whether AI sends a dict or a string
+def safe_parse_option(option, idx):
+    if isinstance(option, dict):
+        text = str(option.get("text", f"Option {idx+1}"))
+        feedback = str(option.get("feedback", ""))
+        correct = option.get("correct", False)
+    else:
+        # Fallback if AI sends a string
+        text = str(option)
+        feedback = ""
+        correct = False
+    
+    # Clean LaTeX symbols for buttons/text
+    clean_text = text.replace('$', '').replace('\\', '')
+    clean_feedback = feedback.replace('$', '').replace('\\', '')
+    
+    return text, clean_text, clean_feedback, correct
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -132,12 +128,11 @@ with tab_draw:
                 input_image = Image.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA').convert('RGB')
 
 with tab_type:
-    # --- ADVANCED CALCULATOR INTERFACE ---
+    # --- CALCULATOR ---
     calc_basic, calc_funcs, calc_trig = st.tabs(["Basic", "Functions", "Trig"])
     
     with calc_basic:
         c1, c2, c3, c4, c5 = st.columns(5)
-        
         with c1:
             with st.popover("a / b"): 
                 st.write("**Fraction**")
@@ -146,7 +141,6 @@ with tab_type:
                 if st.button("Insert", key="btn_frac"):
                     add_text(f"({num})/({den})")
                     st.rerun()
-
         with c2:
             with st.popover("xʸ"): 
                 st.write("**Exponent**")
@@ -155,7 +149,6 @@ with tab_type:
                 if st.button("Insert", key="btn_exp"):
                     add_text(f"({base})^({exp})")
                     st.rerun()
-
         with c3:
             with st.popover("ⁿ√x"):
                 st.write("**Root**")
@@ -165,7 +158,6 @@ with tab_type:
                     if idx: add_text(f"root({rad}, {idx})")
                     else: add_text(f"sqrt({rad})")
                     st.rerun()
-        
         with c4: st.button("(", on_click=add_text, args=("(",))
         with c5: st.button(")", on_click=add_text, args=(")",))
 
@@ -232,24 +224,22 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     [
       {
         "initial_math": "LaTeX of the equation BEFORE this step",
-        "work_math": "LaTeX showing the vertical work. See alignment rules below.",
+        "work_math": "LaTeX showing the vertical work.",
         "question": "What is the best next step?",
         "options": [ ... ]
       }
     ]
     
     RULE 1: NO REDUNDANCY
-    - The "work_math" should ONLY show the operation performed.
+    - The "work_math" should ONLY show the operation performed (red text).
     - Do NOT include the result row (the answer) at the bottom.
-    - Do NOT include the horizontal line (\hline).
     - The result will naturally appear as the "initial_math" of the NEXT step.
     
     RULE 2: PERFECT PLACE VALUE ALIGNMENT
-    - Use this column structure for equations: `\begin{array}{rcl}` (Right-aligned Left side, Center equals, Right-aligned Right side).
-    - This forces the numbers to stack by place value (units over units).
-    - When adding/subtracting, place the operator (like - or +) to the left of the number so it doesn't mess up the digit alignment.
+    - Use `\begin{array}{rcl}` (Right, Center, Right).
+    - Place operator to the left of the number.
     
-    Example for "2x + 15 = 35" (Subtracting 15):
+    Example:
     "initial_math": "2x + 15 = 35",
     "work_math": "\\begin{array}{rcl} 2x + 15 & = & 35 \\\\ \\color{red}{-15} & & \\color{red}{-15} \\end{array}"
     """
@@ -288,34 +278,26 @@ if st.session_state.solution_data:
             with col_math:
                 interaction = st.session_state.interactions.get(i)
                 
-                # Logic:
-                # 1. Past Step: Show the work (red text)
-                # 2. Current Step (Solved): Show the work (red text)
-                # 3. Current Step (Unsolved): Show initial equation (black text)
-                
                 if i < st.session_state.step_count:
-                    st.latex(step['work_math'])
+                    st.latex(step.get('work_math', ''))
                 elif i == st.session_state.step_count:
                     if interaction and interaction["correct"]:
-                        st.latex(step['work_math'])
+                        st.latex(step.get('work_math', ''))
                     else:
-                        st.latex(step['initial_math'])
+                        st.latex(step.get('initial_math', ''))
             
             with col_interaction:
-                st.markdown(f"**Step {i+1}:** {step['question']}")
+                st.markdown(f"**Step {i+1}:** {step.get('question', '')}")
                 interaction = st.session_state.interactions.get(i)
                 
+                # --- DISPLAY INTERACTIONS SAFELY ---
                 if interaction and interaction["correct"]:
                     sel_idx = interaction["choice"]
+                    # Get option safely
                     opt = step['options'][sel_idx]
+                    orig_text, _, clean_fb, _ = safe_parse_option(opt, sel_idx)
                     
-                    # Robust feedback access
-                    if isinstance(opt, dict):
-                         fb_text = opt.get("feedback", "")
-                         clean_fb = str(fb_text).replace('$', '').replace('\\', '')
-                         st.success(f"**{opt.get('text', '')}**\n\n{clean_fb}")
-                    else:
-                         st.success(f"**{opt}**") # Fallback for simple string
+                    st.success(f"**{orig_text}**\n\n{clean_fb}")
                     
                     if i == st.session_state.step_count:
                         if i < len(steps) - 1:
@@ -331,32 +313,20 @@ if st.session_state.solution_data:
                                 st.rerun()
 
                 else:
+                    # WRONG GUESS or NO GUESS
                     if interaction and not interaction["correct"]:
                         sel_idx = interaction["choice"]
                         opt = step['options'][sel_idx]
-                        
-                        if isinstance(opt, dict):
-                            fb_text = opt.get("feedback", "")
-                            clean_fb = str(fb_text).replace('$', '').replace('\\', '')
-                            st.error(f"**{opt.get('text', '')}**\n\n{clean_fb}")
-                        else:
-                            st.error(f"**{opt}**")
+                        orig_text, _, clean_fb, _ = safe_parse_option(opt, sel_idx)
+                        st.error(f"**{orig_text}**\n\n{clean_fb}")
 
+                    # RENDER BUTTONS LOOP
                     for idx, option in enumerate(step['options']):
-                        def on_click(step_i, opt_i, is_corr):
-                            st.session_state.interactions[step_i] = {"choice": opt_i, "correct": is_corr}
+                        # Use the safety parser!
+                        orig_text, clean_btn_text, _, is_corr = safe_parse_option(option, idx)
                         
-                        # --- ROBUST TYPE CHECKING ---
-                        if isinstance(option, dict):
-                             raw_text = option.get("text", f"Option {idx+1}")
-                             is_corr = option.get("correct", False)
-                        else:
-                             # If AI sends just a string "Subtract 5"
-                             raw_text = str(option)
-                             is_corr = False # Default to false if malformed
-                        
-                        safe_text = str(raw_text)
-                        clean_btn_text = safe_text.replace('$', '').replace('\\', '')
+                        def on_click(step_i, opt_i, is_corr_val):
+                            st.session_state.interactions[step_i] = {"choice": opt_i, "correct": is_corr_val}
                         
                         if st.button(clean_btn_text, key=f"btn_{i}_{idx}"):
                             on_click(i, idx, is_corr)
