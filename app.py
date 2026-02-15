@@ -73,7 +73,7 @@ st.markdown("""
         font-size: 1.1rem;
     }
     
-    /* Locked State (Now mostly unused, but kept for safety) */
+    /* Locked State */
     .locked-state {
         color: #94A3B8;
         font-style: italic;
@@ -138,7 +138,6 @@ with tab_type:
     with calc_basic:
         c1, c2, c3, c4, c5 = st.columns(5)
         
-        # 1. Fraction Builder
         with c1:
             with st.popover("a / b"): 
                 st.write("**Fraction**")
@@ -148,7 +147,6 @@ with tab_type:
                     add_text(f"({num})/({den})")
                     st.rerun()
 
-        # 2. Exponent Builder
         with c2:
             with st.popover("xʸ"): 
                 st.write("**Exponent**")
@@ -158,7 +156,6 @@ with tab_type:
                     add_text(f"({base})^({exp})")
                     st.rerun()
 
-        # 3. Root Builder
         with c3:
             with st.popover("ⁿ√x"):
                 st.write("**Root**")
@@ -172,7 +169,6 @@ with tab_type:
         with c4: st.button("(", on_click=add_text, args=("(",))
         with c5: st.button(")", on_click=add_text, args=(")",))
 
-        # ROW 2: Basic Ops
         c1, c2, c3, c4, c5 = st.columns(5)
         with c1: st.button("➕", on_click=add_text, args=("+",))
         with c2: st.button("➖", on_click=add_text, args=("-",))
@@ -204,7 +200,6 @@ with tab_type:
         with c5: st.button("sec", on_click=add_text, args=("sec(",))
         with c6: st.button("cot", on_click=add_text, args=("cot(",))
 
-    # --- MAIN INPUT AREA ---
     input_text = st.text_area(
         "", 
         key="user_problem",
@@ -227,38 +222,41 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     else:
         st.warning("⚠️ Please provide a problem first!"); st.stop()
 
-    # --- SYSTEM PROMPT ---
+    # --- UPDATED SYSTEM PROMPT FOR PERFECT FLOW & ALIGNMENT ---
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
     
     GOAL: Break the problem into steps.
     
     OUTPUT FORMAT: JSON ONLY.
-    Structure:
     [
       {
-        "initial_math": "LaTeX of the equation BEFORE this step (e.g. 2x + 15 = 35)",
-        "work_math": "LaTeX showing the vertical work performed (e.g. subtracting 15)",
+        "initial_math": "LaTeX of the equation BEFORE this step",
+        "work_math": "LaTeX showing the vertical work. See alignment rules below.",
         "question": "What is the best next step?",
-        "options": [
-          {"text": "Correct Option", "correct": true, "feedback": "Explanation."},
-          {"text": "Wrong Option 1", "correct": false, "feedback": "Explanation."},
-          {"text": "Wrong Option 2", "correct": false, "feedback": "Explanation."}
-        ]
+        "options": [ ... ]
       }
     ]
     
-    CRITICAL RULE FOR "work_math" ALIGNMENT:
-    You MUST use a 4-column array {rrcl} to perfectly align terms.
-    Split the equation like this: [Term 1] [Operator+Term 2] [Equals] [Right Side]
+    RULE 1: NO REDUNDANCY
+    - The "work_math" should ONLY show the operation performed.
+    - Do NOT include the result row (the answer) at the bottom.
+    - Do NOT include the horizontal line (\hline).
+    - The result will naturally appear as the "initial_math" of the NEXT step.
+    
+    RULE 2: PERFECT PLACE VALUE ALIGNMENT
+    - Use this column structure for equations: `\begin{array}{rcl}` (Right-aligned Left side, Center equals, Right-aligned Right side).
+    - This forces the numbers to stack by place value (units over units).
+    - When adding/subtracting, place the operator (like - or +) to the left of the number so it doesn't mess up the digit alignment.
     
     Example for "2x + 15 = 35" (Subtracting 15):
-    "\\begin{array}{rrcl} 2x & + 15 & = & 35 \\\\ & \\color{red}{-15} & & \\color{red}{-15} \\\\ \\hline 2x & & = & 20 \\end{array}"
+    "initial_math": "2x + 15 = 35",
+    "work_math": "\\begin{array}{rcl} 2x + 15 & = & 35 \\\\ \\color{red}{-15} & & \\color{red}{-15} \\end{array}"
     
-    Example for "3x - 4 = 11" (Adding 4):
-    "\\begin{array}{rrcl} 3x & - 4 & = & 11 \\\\ & \\color{red}{+4} & & \\color{red}{+4} \\\\ \\hline 3x & & = & 15 \\end{array}"
+    (Notice: No result row. No \hline. Just the red subtraction.)
     
-    If vertical work is not applicable (like dividing), just show standard stacking.
+    Example for "3x = 15" (Dividing):
+    "work_math": "\\begin{array}{rcl} \\frac{3x}{3} & = & \\frac{15}{3} \\end{array}"
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -295,23 +293,17 @@ if st.session_state.solution_data:
             with col_math:
                 interaction = st.session_state.interactions.get(i)
                 
-                # --- NEW DISPLAY LOGIC ---
-                # 1. If we are on a PAST step, we show the finished work.
-                # 2. If we are on the CURRENT step:
-                #    - If UNSOLVED: Show the "initial_math" (The Problem First!)
-                #    - If SOLVED: Show the "work_math" (The Red Vertical Work)
+                # Logic:
+                # 1. Past Step: Show the work (red text)
+                # 2. Current Step (Solved): Show the work (red text)
+                # 3. Current Step (Unsolved): Show initial equation (black text)
                 
                 if i < st.session_state.step_count:
-                    # Past Step -> Show finished work
                     st.latex(step['work_math'])
-                    
                 elif i == st.session_state.step_count:
-                    # Current Step
                     if interaction and interaction["correct"]:
-                         # User got it right -> Show vertical work
                         st.latex(step['work_math'])
                     else:
-                        # User hasn't solved it yet -> Show the problem!
                         st.latex(step['initial_math'])
             
             with col_interaction:
@@ -322,7 +314,6 @@ if st.session_state.solution_data:
                     sel_idx = interaction["choice"]
                     opt = step['options'][sel_idx]
                     
-                    # Clean feedback text safety
                     fb_text = opt.get("feedback", "")
                     clean_fb = str(fb_text).replace('$', '').replace('\\', '')
                     
