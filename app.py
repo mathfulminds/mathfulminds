@@ -28,31 +28,28 @@ st.markdown("""
         letter-spacing: -1px;
     }
     
-    /* HIDDEN STATE STYLE */
-    .locked-state {
-        color: #94A3B8;
-        font-style: italic;
-        border: 1px dashed #CBD5E1;
-        padding: 20px;
-        border-radius: 8px;
-        text-align: center;
-    }
-    
-    /* HELPER BUTTONS */
+    /* CALCULATOR BUTTON STYLE */
     div.stButton > button {
-        background-color: #F1F5F9;
-        color: #334155;
-        border: 1px solid #CBD5E1;
+        background-color: #FFFFFF;
+        color: #1E293B;
+        border: 1px solid #E2E8F0;
+        box-shadow: 0 2px 0 #CBD5E1; /* The "3D" click effect */
         padding: 0px; 
-        font-size: 1rem;
+        font-size: 1.1rem; /* Larger Text */
         font-weight: 600;
-        border-radius: 6px;
+        border-radius: 8px;
         width: 100%;
-        min-height: 40px;
+        min-height: 45px;
+        transition: all 0.1s;
+    }
+    div.stButton > button:active {
+        box-shadow: 0 0 0 #CBD5E1; /* Pressed down effect */
+        transform: translateY(2px);
     }
     div.stButton > button:hover {
-        background-color: #E2E8F0;
+        background-color: #F1F5F9;
         border-color: #94A3B8;
+        color: #0F172A;
     }
     
     /* Primary Action Button (Solve) override */
@@ -60,8 +57,23 @@ st.markdown("""
         background-color: #0F172A;
         color: white;
         border: none;
+        box-shadow: 0 4px 0 #334155;
         padding: 10px 20px;
-        font-size: 1rem;
+        font-size: 1.1rem;
+    }
+    div[data-testid="stButton"] > button[kind="primary"]:active {
+        box-shadow: 0 0 0 #334155;
+        transform: translateY(4px);
+    }
+    
+    /* Locked State */
+    .locked-state {
+        color: #94A3B8;
+        font-style: italic;
+        border: 1px dashed #CBD5E1;
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -79,13 +91,10 @@ MODEL_NAME = 'gemini-flash-latest'
 if "step_count" not in st.session_state: st.session_state.step_count = 0
 if "solution_data" not in st.session_state: st.session_state.solution_data = None
 if "interactions" not in st.session_state: st.session_state.interactions = {}
-
-# IMPORTANT: Initialize the key we will bind to the text area
 if "user_problem" not in st.session_state: st.session_state.user_problem = ""
 
 # --- HELPER TO ADD SYMBOL ---
 def add_symbol(sym):
-    # This directly modifies the session state variable bound to the text box
     st.session_state.user_problem += sym
 
 # --- SIDEBAR ---
@@ -117,37 +126,37 @@ with tab_draw:
 with tab_type:
     st.write("Math Keypad:")
     
-    # ROW 1: Operations
+    # ROW 1: Numbers & Operations
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1: st.button("➕", on_click=add_symbol, args=("+",))
     with c2: st.button("➖", on_click=add_symbol, args=("-",))
     with c3: st.button("✖️", on_click=add_symbol, args=("*",))
-    with c4: st.button("➗", on_click=add_symbol, args=("/",))
+    # Visual Fraction Bar Button (inserts /)
+    with c4: st.button("a/b", on_click=add_symbol, args=("/",), help="Fraction Bar")
     with c5: st.button("(", on_click=add_symbol, args=("(",))
     with c6: st.button(")", on_click=add_symbol, args=(")",))
 
-    # ROW 2: Variables & Algebra
+    # ROW 2: Exponents & Variables
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    with c1: st.button("x²", on_click=add_symbol, args=("^2",))
-    with c2: st.button("√", on_click=add_symbol, args=("sqrt(",))
-    with c3: st.button("≤", on_click=add_symbol, args=("≤",))
-    with c4: st.button("≥", on_click=add_symbol, args=("≥",))
-    with c5: st.button("π", on_click=add_symbol, args=("pi",))
-    with c6: st.button("|x|", on_click=add_symbol, args=("|",))
+    # UNICODE EXPONENTS (Visual magic)
+    with c1: st.button("x²", on_click=add_symbol, args=("²",))
+    with c2: st.button("x³", on_click=add_symbol, args=("³",))
+    with c3: st.button("√", on_click=add_symbol, args=("sqrt(",))
+    with c4: st.button("≤", on_click=add_symbol, args=("≤",))
+    with c5: st.button("≥", on_click=add_symbol, args=("≥",))
+    with c6: st.button("π", on_click=add_symbol, args=("π",))
 
-    # EXPANDER: Advanced Trig/Log
-    with st.expander("More Functions (Trig, Log, etc.)"):
+    # ROW 3: More Functions
+    with st.expander("More Functions"):
         t1, t2, t3, t4, t5, t6 = st.columns(6)
         with t1: st.button("sin", on_click=add_symbol, args=("sin(",))
         with t2: st.button("cos", on_click=add_symbol, args=("cos(",))
         with t3: st.button("tan", on_click=add_symbol, args=("tan(",))
-        with t4: st.button("log", on_click=add_symbol, args=("log(",))
-        with t5: st.button("ln", on_click=add_symbol, args=("ln(",))
+        with t4: st.button("|x|", on_click=add_symbol, args=("|",))
+        with t5: st.button("log", on_click=add_symbol, args=("log(",))
         with t6: st.button("!", on_click=add_symbol, args=("!",))
 
-    # THE TEXT AREA (Bound directly to session state)
-    # The key="user_problem" connects this box to st.session_state.user_problem
-    # When the buttons update the state, this box updates automatically.
+    # TEXT INPUT (Bound to State)
     input_text = st.text_area(
         "", 
         key="user_problem",
@@ -165,7 +174,10 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     # Priority Check
     final_prompt = []
     if input_text:
-        final_prompt = [f"Grade Level: {grade_level}. Problem: {input_text}"]
+        # Note: We need to handle the unicode exponents for the AI
+        # Replace ² with ^2 so the AI understands it math-wise
+        clean_input = input_text.replace("²", "^2").replace("³", "^3").replace("π", "pi")
+        final_prompt = [f"Grade Level: {grade_level}. Problem: {clean_input}"]
     elif input_image:
         final_prompt = [f"Grade Level: {grade_level}. Solve the problem in this image.", input_image]
     else:
@@ -220,19 +232,15 @@ if st.session_state.solution_data:
     
     st.divider()
     
-    # Loop through ALL steps
     for i in range(len(steps)):
-        # Only show steps we have reached
         if i > st.session_state.step_count:
             break
             
         step = steps[i]
         
-        # Container for the Row
         with st.container():
             col_math, col_interaction = st.columns([1, 1])
             
-            # --- LEFT COLUMN: MATH ---
             with col_math:
                 interaction = st.session_state.interactions.get(i)
                 show_math = False
@@ -247,16 +255,13 @@ if st.session_state.solution_data:
                 else:
                     st.markdown('<div class="locked-state">🔒 Solve step to reveal work</div>', unsafe_allow_html=True)
             
-            # --- RIGHT COLUMN: INTERACTION ---
             with col_interaction:
                 st.markdown(f"**Step {i+1}:** {step['question']}")
                 interaction = st.session_state.interactions.get(i)
                 
                 if interaction and interaction["correct"]:
-                    # --- SUCCESS STATE ---
                     sel_idx = interaction["choice"]
                     opt = step['options'][sel_idx]
-                    
                     st.success(f"**{opt['text']}**\n\n{opt['feedback']}")
                     
                     if i == st.session_state.step_count:
@@ -273,7 +278,6 @@ if st.session_state.solution_data:
                                 st.rerun()
 
                 else:
-                    # --- CHOICE STATE ---
                     if interaction and not interaction["correct"]:
                         sel_idx = interaction["choice"]
                         opt = step['options'][sel_idx]
