@@ -3,7 +3,6 @@ import google.generativeai as genai
 from PIL import Image
 from streamlit_drawable_canvas import st_canvas
 import json
-import time
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Mathful Minds", page_icon="🧠", layout="wide")
@@ -38,6 +37,38 @@ st.markdown("""
         border-radius: 8px;
         text-align: center;
     }
+    
+    /* HELPER BUTTONS */
+    div.stButton > button {
+        background-color: #F1F5F9;
+        color: #334155;
+        border: 1px solid #CBD5E1;
+        padding: 2px 5px; 
+        font-size: 0.85rem;
+        font-weight: 600;
+        border-radius: 6px;
+        width: 100%;
+        min-height: 40px; /* Ensure touch target size */
+    }
+    div.stButton > button:hover {
+        background-color: #E2E8F0;
+        border-color: #94A3B8;
+    }
+    
+    /* Primary Action Button (Solve) override */
+    div[data-testid="stButton"] > button[kind="primary"] {
+        background-color: #0F172A;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        font-size: 1rem;
+    }
+    
+    /* Expander Styling */
+    .streamlit-expanderHeader {
+        font-weight: 600;
+        color: #475569;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -54,6 +85,7 @@ MODEL_NAME = 'gemini-flash-latest'
 if "step_count" not in st.session_state: st.session_state.step_count = 0
 if "solution_data" not in st.session_state: st.session_state.solution_data = None
 if "interactions" not in st.session_state: st.session_state.interactions = {}
+if "input_text_val" not in st.session_state: st.session_state.input_text_val = ""
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -82,11 +114,90 @@ with tab_draw:
                 input_image = Image.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA').convert('RGB')
 
 with tab_type:
-    text_val = st.text_area("Enter Math Problem", placeholder="e.g., 2x + 10 = 30", key="text_input")
+    # --- FORMULA EDITOR TOOLBAR ---
+    
+    # Helper function to append text
+    def add_symbol(sym):
+        st.session_state.input_text_val += sym
+    
+    st.write("Math Keypad:")
+    
+    # ROW 1: Essentials (Numbers, exponents, roots)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    with c1: 
+        if st.button("x²"): add_symbol("^2")
+    with c2: 
+        if st.button("xʸ"): add_symbol("^")
+    with c3: 
+        if st.button("√x"): add_symbol("sqrt()")
+    with c4: 
+        if st.button("|x|"): add_symbol("| |")
+    with c5: 
+        if st.button("π"): add_symbol("pi")
+    with c6: 
+        if st.button("÷"): add_symbol("/")
+
+    # ROW 2: Inequalities & Algebra
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    with c1: 
+        if st.button("≤"): add_symbol("<=")
+    with c2: 
+        if st.button("≥"): add_symbol(">=")
+    with c3: 
+        if st.button("≠"): add_symbol("!=")
+    with c4: 
+        if st.button("∞"): add_symbol("infinity")
+    with c5: 
+        if st.button("("): add_symbol("(")
+    with c6: 
+        if st.button(")"): add_symbol(")")
+
+    # EXPANDER: Advanced Functions (Trig, Log, etc.)
+    with st.expander("Show Trig, Log, and Funcs"):
+        # Trig Row
+        t1, t2, t3, t4, t5, t6 = st.columns(6)
+        with t1: 
+            if st.button("sin"): add_symbol("sin()")
+        with t2: 
+            if st.button("cos"): add_symbol("cos()")
+        with t3: 
+            if st.button("tan"): add_symbol("tan()")
+        with t4: 
+            if st.button("csc"): add_symbol("csc()")
+        with t5: 
+            if st.button("sec"): add_symbol("sec()")
+        with t6: 
+            if st.button("cot"): add_symbol("cot()")
+            
+        # Log/Roots Row
+        l1, l2, l3, l4, l5, l6 = st.columns(6)
+        with l1: 
+            if st.button("log"): add_symbol("log()")
+        with l2: 
+            if st.button("ln"): add_symbol("ln()")
+        with l3: 
+            if st.button("e"): add_symbol("e")
+        with l4: 
+            if st.button("n√"): add_symbol("nth_root( , )")
+        with l5: 
+            if st.button("!"): add_symbol("!")
+        with l6: 
+            if st.button("%"): add_symbol("%")
+
+    # The Text Area (connected to session state)
+    text_val = st.text_area(
+        "", 
+        value=st.session_state.input_text_val,
+        placeholder="Type here or use the keypad above...", 
+        key="text_input_area",
+        height=100
+    )
+    # Sync manual typing back to state
+    st.session_state.input_text_val = text_val
     if text_val: input_text = text_val
 
 # --- SOLVER LOGIC ---
-if st.button("🚀 Start Interactive Solve", use_container_width=True):
+if st.button("🚀 Start Interactive Solve", type="primary", use_container_width=True):
     # Reset State
     st.session_state.step_count = 0
     st.session_state.solution_data = None
@@ -164,7 +275,6 @@ if st.session_state.solution_data:
             
             # --- LEFT COLUMN: MATH ---
             with col_math:
-                # Logic: Show math if we are PAST this step OR if we solved it correctly
                 interaction = st.session_state.interactions.get(i)
                 show_math = False
                 
@@ -181,8 +291,6 @@ if st.session_state.solution_data:
             # --- RIGHT COLUMN: INTERACTION ---
             with col_interaction:
                 st.markdown(f"**Step {i+1}:** {step['question']}")
-                
-                # Check interaction history
                 interaction = st.session_state.interactions.get(i)
                 
                 if interaction and interaction["correct"]:
@@ -190,10 +298,8 @@ if st.session_state.solution_data:
                     sel_idx = interaction["choice"]
                     opt = step['options'][sel_idx]
                     
-                    # USE NATIVE STREAMLIT SUCCESS (This supports LaTeX!)
                     st.success(f"**{opt['text']}**\n\n{opt['feedback']}")
                     
-                    # Next Button (Only for current step)
                     if i == st.session_state.step_count:
                         if i < len(steps) - 1:
                             if st.button("Next Step ➡️", key=f"next_{i}"):
@@ -209,21 +315,15 @@ if st.session_state.solution_data:
 
                 else:
                     # --- CHOICE STATE ---
-                    
-                    # If they guessed wrong previously, show error
                     if interaction and not interaction["correct"]:
                         sel_idx = interaction["choice"]
                         opt = step['options'][sel_idx]
-                        # USE NATIVE STREAMLIT ERROR (This supports LaTeX!)
                         st.error(f"**{opt['text']}**\n\n{opt['feedback']}")
 
-                    # Display Buttons
                     for idx, option in enumerate(step['options']):
-                        # Button Callback
                         def on_click(step_i, opt_i, is_corr):
                             st.session_state.interactions[step_i] = {"choice": opt_i, "correct": is_corr}
                         
-                        # We strip LaTeX from buttons because buttons can't render math well
                         clean_btn_text = option["text"].replace('$', '').replace('\\', '')
                         if st.button(clean_btn_text, key=f"btn_{i}_{idx}"):
                             on_click(i, idx, option["correct"])
