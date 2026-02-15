@@ -28,30 +28,42 @@ st.markdown("""
         letter-spacing: -1px;
     }
     
-    /* CALCULATOR BUTTON STYLE */
-    div.stButton > button {
+    /* POP-OVER BUTTON STYLING */
+    /* This targets the buttons that open the popups */
+    div[data-testid="stPopover"] > button {
         background-color: #FFFFFF;
         color: #1E293B;
         border: 1px solid #E2E8F0;
-        box-shadow: 0 2px 0 #CBD5E1; /* The "3D" click effect */
-        padding: 0px; 
-        font-size: 1.1rem; /* Larger Text */
+        box-shadow: 0 2px 0 #CBD5E1;
+        font-size: 1.1rem;
         font-weight: 600;
         border-radius: 8px;
         width: 100%;
-        min-height: 45px;
-        transition: all 0.1s;
+        min-height: 50px; /* Taller buttons like the screenshot */
     }
-    div.stButton > button:active {
-        box-shadow: 0 0 0 #CBD5E1; /* Pressed down effect */
-        transform: translateY(2px);
-    }
-    div.stButton > button:hover {
-        background-color: #F1F5F9;
+    div[data-testid="stPopover"] > button:hover {
+        background-color: #F8FAFC;
         border-color: #94A3B8;
         color: #0F172A;
     }
     
+    /* STANDARD BUTTON STYLING (Simple clicks) */
+    div.stButton > button {
+        background-color: #FFFFFF;
+        color: #1E293B;
+        border: 1px solid #E2E8F0;
+        box-shadow: 0 2px 0 #CBD5E1;
+        font-size: 1.1rem;
+        font-weight: 600;
+        border-radius: 8px;
+        width: 100%;
+        min-height: 50px;
+    }
+    div.stButton > button:hover {
+        background-color: #F8FAFC;
+        border-color: #94A3B8;
+    }
+
     /* Primary Action Button (Solve) override */
     div[data-testid="stButton"] > button[kind="primary"] {
         background-color: #0F172A;
@@ -60,10 +72,6 @@ st.markdown("""
         box-shadow: 0 4px 0 #334155;
         padding: 10px 20px;
         font-size: 1.1rem;
-    }
-    div[data-testid="stButton"] > button[kind="primary"]:active {
-        box-shadow: 0 0 0 #334155;
-        transform: translateY(4px);
     }
     
     /* Locked State */
@@ -93,9 +101,10 @@ if "solution_data" not in st.session_state: st.session_state.solution_data = Non
 if "interactions" not in st.session_state: st.session_state.interactions = {}
 if "user_problem" not in st.session_state: st.session_state.user_problem = ""
 
-# --- HELPER TO ADD SYMBOL ---
-def add_symbol(sym):
-    st.session_state.user_problem += sym
+# --- HELPER FUNCTIONS ---
+def add_text(text):
+    """Directly appends text to the problem string"""
+    st.session_state.user_problem += text
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -105,7 +114,7 @@ with st.sidebar:
 
 # --- INPUT TABS ---
 st.markdown('<div class="main-title">Mathful Minds</div>', unsafe_allow_html=True)
-st.markdown('<p style="text-align: center; color: #64748B;"><b>Interactive Tutor.</b> Choose the right path.</p>', unsafe_allow_html=True)
+st.markdown('<p style="text-align: center; color: #64748B;"><b>Interactive Tutor.</b> Build your problem step-by-step.</p>', unsafe_allow_html=True)
 
 tab_photo, tab_draw, tab_type = st.tabs(["📸 Photo", "✏️ Draw", "⌨️ Type"])
 input_image = None
@@ -124,43 +133,87 @@ with tab_draw:
                 input_image = Image.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA').convert('RGB')
 
 with tab_type:
-    st.write("Math Keypad:")
+    # --- ADVANCED CALCULATOR INTERFACE ---
     
-    # ROW 1: Numbers & Operations
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    with c1: st.button("➕", on_click=add_symbol, args=("+",))
-    with c2: st.button("➖", on_click=add_symbol, args=("-",))
-    with c3: st.button("✖️", on_click=add_symbol, args=("*",))
-    # Visual Fraction Bar Button (inserts /)
-    with c4: st.button("a/b", on_click=add_symbol, args=("/",), help="Fraction Bar")
-    with c5: st.button("(", on_click=add_symbol, args=("(",))
-    with c6: st.button(")", on_click=add_symbol, args=(")",))
+    # We use Tabs for the calculator sections, similar to Symbolab
+    calc_basic, calc_funcs, calc_trig = st.tabs(["Basic", "Functions", "Trig"])
+    
+    with calc_basic:
+        # ROW 1: The "Builders" (Popovers)
+        c1, c2, c3, c4, c5 = st.columns(5)
+        
+        # 1. Fraction Builder
+        with c1:
+            with st.popover("a / b"): # Label
+                st.write("**Fraction Builder**")
+                num = st.text_input("Numerator (Top)")
+                den = st.text_input("Denominator (Bottom)")
+                if st.button("Insert Fraction"):
+                    add_text(f"({num})/({den})")
+                    st.rerun()
 
-    # ROW 2: Exponents & Variables
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    # UNICODE EXPONENTS (Visual magic)
-    with c1: st.button("x²", on_click=add_symbol, args=("²",))
-    with c2: st.button("x³", on_click=add_symbol, args=("³",))
-    with c3: st.button("√", on_click=add_symbol, args=("sqrt(",))
-    with c4: st.button("≤", on_click=add_symbol, args=("≤",))
-    with c5: st.button("≥", on_click=add_symbol, args=("≥",))
-    with c6: st.button("π", on_click=add_symbol, args=("π",))
+        # 2. Exponent Builder
+        with c2:
+            with st.popover("xʸ"): 
+                st.write("**Exponent Builder**")
+                base = st.text_input("Base (e.g., x)")
+                exp = st.text_input("Power (e.g., 2)")
+                if st.button("Insert Power"):
+                    add_text(f"({base})^({exp})")
+                    st.rerun()
 
-    # ROW 3: More Functions
-    with st.expander("More Functions"):
-        t1, t2, t3, t4, t5, t6 = st.columns(6)
-        with t1: st.button("sin", on_click=add_symbol, args=("sin(",))
-        with t2: st.button("cos", on_click=add_symbol, args=("cos(",))
-        with t3: st.button("tan", on_click=add_symbol, args=("tan(",))
-        with t4: st.button("|x|", on_click=add_symbol, args=("|",))
-        with t5: st.button("log", on_click=add_symbol, args=("log(",))
-        with t6: st.button("!", on_click=add_symbol, args=("!",))
+        # 3. Root Builder
+        with c3:
+            with st.popover("ⁿ√x"):
+                st.write("**Root Builder**")
+                rad = st.text_input("Inside Root (x)")
+                idx = st.text_input("Index (n) - leave empty for square root")
+                if st.button("Insert Root"):
+                    if idx: add_text(f"root({rad}, {idx})")
+                    else: add_text(f"sqrt({rad})")
+                    st.rerun()
+        
+        # 4. Standard Operations (Direct Click)
+        with c4: st.button("(", on_click=add_text, args=("(",))
+        with c5: st.button(")", on_click=add_text, args=(")",))
 
-    # TEXT INPUT (Bound to State)
+        # ROW 2: Basic Ops
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1: st.button("➕", on_click=add_text, args=("+",))
+        with c2: st.button("➖", on_click=add_text, args=("-",))
+        with c3: st.button("✖️", on_click=add_text, args=("*",))
+        with c4: st.button("➗", on_click=add_text, args=("/",))
+        with c5: st.button("=", on_click=add_text, args=("=",))
+
+    with calc_funcs:
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: 
+            with st.popover("logₙ"):
+                st.write("Logarithm")
+                val = st.text_input("Value")
+                base = st.text_input("Base (default 10)")
+                if st.button("Insert Log"):
+                    if base: add_text(f"log({val}, {base})")
+                    else: add_text(f"log({val})")
+                    st.rerun()
+        with c2: st.button("ln", on_click=add_text, args=("ln(",))
+        with c3: st.button("|x|", on_click=add_text, args=("|",))
+        with c4: st.button("!", on_click=add_text, args=("!",))
+
+    with calc_trig:
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        with c1: st.button("sin", on_click=add_text, args=("sin(",))
+        with c2: st.button("cos", on_click=add_text, args=("cos(",))
+        with c3: st.button("tan", on_click=add_text, args=("tan(",))
+        with c4: st.button("csc", on_click=add_text, args=("csc(",))
+        with c5: st.button("sec", on_click=add_text, args=("sec(",))
+        with c6: st.button("cot", on_click=add_text, args=("cot(",))
+
+    # --- MAIN INPUT AREA ---
     input_text = st.text_area(
         "", 
         key="user_problem",
-        placeholder="Type here or click buttons above...", 
+        placeholder="Select a tool above to build your equation...", 
         height=100
     )
 
@@ -174,8 +227,7 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     # Priority Check
     final_prompt = []
     if input_text:
-        # Note: We need to handle the unicode exponents for the AI
-        # Replace ² with ^2 so the AI understands it math-wise
+        # Pre-process common "text math" to standard math for AI
         clean_input = input_text.replace("²", "^2").replace("³", "^3").replace("π", "pi")
         final_prompt = [f"Grade Level: {grade_level}. Problem: {clean_input}"]
     elif input_image:
