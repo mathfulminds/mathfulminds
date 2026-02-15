@@ -142,7 +142,6 @@ with tab_type:
         with c1:
             with st.popover("a / b"): 
                 st.write("**Fraction**")
-                # Added keys 'frac_top' and 'frac_bot'
                 num = st.text_input("Top", key="frac_top")
                 den = st.text_input("Bottom", key="frac_bot")
                 if st.button("Insert", key="btn_frac"):
@@ -153,7 +152,6 @@ with tab_type:
         with c2:
             with st.popover("xʸ"): 
                 st.write("**Exponent**")
-                # Added keys 'exp_base' and 'exp_pow'
                 base = st.text_input("Base", key="exp_base")
                 exp = st.text_input("Power", key="exp_pow")
                 if st.button("Insert", key="btn_exp"):
@@ -164,7 +162,6 @@ with tab_type:
         with c3:
             with st.popover("ⁿ√x"):
                 st.write("**Root**")
-                # Added keys 'root_val' and 'root_idx'
                 rad = st.text_input("Value", key="root_val")
                 idx = st.text_input("Index (Optional)", key="root_idx")
                 if st.button("Insert", key="btn_root"):
@@ -188,7 +185,6 @@ with tab_type:
         with c1: 
             with st.popover("logₙ"):
                 st.write("Logarithm")
-                # Added keys 'log_val' and 'log_base'
                 val = st.text_input("Value", key="log_val")
                 base = st.text_input("Base", key="log_base")
                 if st.button("Insert Log", key="btn_log"):
@@ -235,33 +231,33 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
     
-    GOAL: Break the problem into steps. For each step, provide:
-    1. The visual math work (showing operations on both sides).
-    2. A multiple-choice question to guide the student.
+    GOAL: Break the problem into steps.
     
     OUTPUT FORMAT: JSON ONLY.
     Structure:
     [
       {
-        "math_display": "LaTeX string",
+        "math_display": "The visual work for THIS step.",
         "question": "What is the best next step?",
-        "options": [
-          {"text": "Correct Option", "correct": true, "feedback": "Explanation."},
-          {"text": "Wrong Option 1", "correct": false, "feedback": "Explanation."},
-          {"text": "Wrong Option 2", "correct": false, "feedback": "Explanation."}
-        ]
+        "options": [ ... ]
       }
     ]
     
-    CRITICAL RULE FOR "math_display":
-    You MUST show the vertical work for algebraic steps.
-    Use '\begin{array}' to stack the equation, the operation (in RED), and the result.
-    Align them properly.
+    CRITICAL RULES FOR "math_display":
+    1. **TIMING:** The "math_display" for Step 1 must show the work PERFORMED in Step 1. Do NOT just show the starting equation.
+       - Correct: Show the subtraction occurring.
+       - Incorrect: Just showing "2x + 5 = 25".
     
-    Example:
-    "2x + 5 = 20 \\\\ {\color{red} -5 \quad -5} \\\\ 2x = 15"
+    2. **ALIGNMENT:** You must use an array with 3 columns {r c l} to align the work.
+       - Right-align the Left side.
+       - Center-align the Equals sign.
+       - Left-align the Right side.
+       
+    Example of Subtracting 5:
+    "\\begin{array}{r c l} 2x + 5 & = & 25 \\\\ \\color{red}{-5} & & \\color{red}{-5} \\\\ \\hline 2x & = & 20 \\end{array}"
     
-    If no vertical work is needed, just show the equation.
+    Example of Dividing by 2:
+    "\\begin{array}{r c l} \\frac{2x}{2} & = & \\frac{20}{2} \\\\ x & = & 10 \\end{array}"
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
