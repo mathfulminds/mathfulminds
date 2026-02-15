@@ -29,7 +29,6 @@ st.markdown("""
     }
     
     /* POP-OVER BUTTON STYLING */
-    /* This targets the buttons that open the popups */
     div[data-testid="stPopover"] > button {
         background-color: #FFFFFF;
         color: #1E293B;
@@ -39,7 +38,7 @@ st.markdown("""
         font-weight: 600;
         border-radius: 8px;
         width: 100%;
-        min-height: 50px; /* Taller buttons like the screenshot */
+        min-height: 50px;
     }
     div[data-testid="stPopover"] > button:hover {
         background-color: #F8FAFC;
@@ -47,7 +46,7 @@ st.markdown("""
         color: #0F172A;
     }
     
-    /* STANDARD BUTTON STYLING (Simple clicks) */
+    /* STANDARD BUTTON STYLING */
     div.stButton > button {
         background-color: #FFFFFF;
         color: #1E293B;
@@ -134,46 +133,42 @@ with tab_draw:
 
 with tab_type:
     # --- ADVANCED CALCULATOR INTERFACE ---
-    
-    # We use Tabs for the calculator sections, similar to Symbolab
     calc_basic, calc_funcs, calc_trig = st.tabs(["Basic", "Functions", "Trig"])
     
     with calc_basic:
-        # ROW 1: The "Builders" (Popovers)
         c1, c2, c3, c4, c5 = st.columns(5)
         
         # 1. Fraction Builder
         with c1:
-            with st.popover("a / b"): # Label
-                st.write("**Fraction Builder**")
-                num = st.text_input("Numerator (Top)")
-                den = st.text_input("Denominator (Bottom)")
-                if st.button("Insert Fraction"):
+            with st.popover("a / b"): 
+                st.write("**Fraction**")
+                num = st.text_input("Top")
+                den = st.text_input("Bottom")
+                if st.button("Insert"):
                     add_text(f"({num})/({den})")
                     st.rerun()
 
         # 2. Exponent Builder
         with c2:
             with st.popover("xʸ"): 
-                st.write("**Exponent Builder**")
-                base = st.text_input("Base (e.g., x)")
-                exp = st.text_input("Power (e.g., 2)")
-                if st.button("Insert Power"):
+                st.write("**Exponent**")
+                base = st.text_input("Base")
+                exp = st.text_input("Power")
+                if st.button("Insert"):
                     add_text(f"({base})^({exp})")
                     st.rerun()
 
         # 3. Root Builder
         with c3:
             with st.popover("ⁿ√x"):
-                st.write("**Root Builder**")
-                rad = st.text_input("Inside Root (x)")
-                idx = st.text_input("Index (n) - leave empty for square root")
-                if st.button("Insert Root"):
+                st.write("**Root**")
+                rad = st.text_input("Value")
+                idx = st.text_input("Index (Optional)")
+                if st.button("Insert"):
                     if idx: add_text(f"root({rad}, {idx})")
                     else: add_text(f"sqrt({rad})")
                     st.rerun()
         
-        # 4. Standard Operations (Direct Click)
         with c4: st.button("(", on_click=add_text, args=("(",))
         with c5: st.button(")", on_click=add_text, args=(")",))
 
@@ -191,7 +186,7 @@ with tab_type:
             with st.popover("logₙ"):
                 st.write("Logarithm")
                 val = st.text_input("Value")
-                base = st.text_input("Base (default 10)")
+                base = st.text_input("Base")
                 if st.button("Insert Log"):
                     if base: add_text(f"log({val}, {base})")
                     else: add_text(f"log({val})")
@@ -219,15 +214,12 @@ with tab_type:
 
 # --- SOLVER LOGIC ---
 if st.button("🚀 Start Interactive Solve", type="primary", use_container_width=True):
-    # Reset State
     st.session_state.step_count = 0
     st.session_state.solution_data = None
     st.session_state.interactions = {}
     
-    # Priority Check
     final_prompt = []
     if input_text:
-        # Pre-process common "text math" to standard math for AI
         clean_input = input_text.replace("²", "^2").replace("³", "^3").replace("π", "pi")
         final_prompt = [f"Grade Level: {grade_level}. Problem: {clean_input}"]
     elif input_image:
@@ -235,31 +227,39 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     else:
         st.warning("⚠️ Please provide a problem first!"); st.stop()
 
-    # --- SYSTEM PROMPT ---
+    # --- UPDATED SYSTEM PROMPT FOR VERTICAL MATH ---
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
     
-    GOAL: Break the problem into steps. For each step, provide the CORRECT next move and 2 INCORRECT "distractor" moves.
+    GOAL: Break the problem into steps. For each step, provide:
+    1. The visual math work (showing operations on both sides).
+    2. A multiple-choice question to guide the student.
     
     OUTPUT FORMAT: JSON ONLY.
     Structure:
     [
       {
-        "math_display": "LaTeX of the work AFTER this step is done",
+        "math_display": "LaTeX string",
         "question": "What is the best next step?",
         "options": [
-          {"text": "Correct Option", "correct": true, "feedback": "Explanation why correct."},
-          {"text": "Wrong Option 1", "correct": false, "feedback": "Explanation why wrong."},
-          {"text": "Wrong Option 2", "correct": false, "feedback": "Explanation why wrong."}
+          {"text": "Correct Option", "correct": true, "feedback": "Explanation."},
+          {"text": "Wrong Option 1", "correct": false, "feedback": "Explanation."},
+          {"text": "Wrong Option 2", "correct": false, "feedback": "Explanation."}
         ]
       }
     ]
     
-    RULES:
-    1. "math_display": Use LaTeX. For vertical math, use '\begin{aligned}' or simple newlines '\\'.
-    2. "options": Scramble the order. Mark only one as "correct": true.
-    3. **FRACTIONS**: Wherever possible, use LaTeX for fractions in text/feedback (e.g. "The slope is $\frac{1}{2}$"). Do NOT use slashes (1/2).
-    4. If image is unsafe/non-math, return {"error": "..."}
+    CRITICAL RULE FOR "math_display":
+    You MUST show the vertical work for algebraic steps.
+    Use '\begin{array}' to stack the equation, the operation (in RED), and the result.
+    
+    Example for "Subtract 5 from both sides of 2x + 5 = 20":
+    "2x + 5 = 20 \\\\ {\color{red} -5 \quad -5} \\\\ \hline 2x = 15"
+    
+    Example for "Divide by 2":
+    "\frac{2x}{2} = \frac{15}{2} \\\\ x = 7.5"
+    
+    If no vertical work is needed, just show the equation.
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -303,6 +303,7 @@ if st.session_state.solution_data:
                     show_math = True
                 
                 if show_math:
+                    # Renders the vertical stack with red operations
                     st.latex(step['math_display'])
                 else:
                     st.markdown('<div class="locked-state">🔒 Solve step to reveal work</div>', unsafe_allow_html=True)
