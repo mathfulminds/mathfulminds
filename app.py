@@ -29,34 +29,11 @@ st.markdown("""
         letter-spacing: -1px;
     }
     
-    /* MATH CONTAINER */
-    .math-container {
-        background-color: #FFFFFF;
-        padding: 20px;
-        border-radius: 8px;
-        border: 1px solid #E2E8F0;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        margin-bottom: 20px;
-        font-size: 1.3rem;
-        text-align: center;
-        min-height: 100px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    /* BLURRED TEXT */
-    .blur-text {
-        color: transparent;
-        text-shadow: 0 0 15px rgba(0,0,0,0.3);
-        user-select: none;
-    }
-    
     /* FEEDBACK BOXES */
     .success-box {
         padding: 1rem;
         background-color: #DCFCE7;
-        border: 1px solid #16A34A;
+        border: 2px solid #16A34A;
         border-radius: 0.5rem;
         color: #14532D;
         margin-bottom: 1rem;
@@ -65,10 +42,20 @@ st.markdown("""
     .error-box {
         padding: 1rem;
         background-color: #FEE2E2;
-        border: 1px solid #DC2626;
+        border: 2px solid #DC2626;
         border-radius: 0.5rem;
         color: #7F1D1D;
         margin-bottom: 1rem;
+    }
+    
+    /* HIDDEN STATE STYLE */
+    .locked-state {
+        color: #94A3B8;
+        font-style: italic;
+        border: 1px dashed #CBD5E1;
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -85,7 +72,6 @@ MODEL_NAME = 'gemini-flash-latest'
 # --- SESSION STATE ---
 if "step_count" not in st.session_state: st.session_state.step_count = 0
 if "solution_data" not in st.session_state: st.session_state.solution_data = None
-# Dictionary to store user choices: { step_index: { "choice": idx, "correct": bool } }
 if "interactions" not in st.session_state: st.session_state.interactions = {}
 
 # --- SIDEBAR ---
@@ -205,12 +191,11 @@ if st.session_state.solution_data:
                 elif interaction and interaction["correct"]:
                     show_math = True
                 
-                st.markdown(f'<div class="math-container">', unsafe_allow_html=True)
+                # FIXED: No more "math-container" div wrapper. Just clean math.
                 if show_math:
                     st.latex(step['math_display'])
                 else:
-                    st.markdown('<span class="blur-text">HIDDEN</span><br>🔒 <i>Solve to reveal</i>', unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="locked-state">🔒 Solve step to reveal work</div>', unsafe_allow_html=True)
             
             # --- RIGHT COLUMN: INTERACTION ---
             with col_interaction:
