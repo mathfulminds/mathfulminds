@@ -84,21 +84,15 @@ def add_text(text):
 
 # --- SAFETY HELPER: Parse Option Data ---
 def safe_parse_option(option, idx):
-    """
-    Safely extracts text, feedback, and correctness from an option,
-    handling cases where AI sends a string instead of a dictionary.
-    """
     if isinstance(option, dict):
         text = str(option.get("text", f"Option {idx+1}"))
         feedback = str(option.get("feedback", ""))
         correct = option.get("correct", False)
     else:
-        # Fallback if AI sends a simple string
         text = str(option)
         feedback = ""
         correct = False
     
-    # Clean LaTeX symbols for buttons (buttons can't show math code)
     clean_text = text.replace('$', '').replace('\\', '')
     clean_feedback = feedback.replace('$', '').replace('\\', '')
     
@@ -229,26 +223,27 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
         "initial_math": "LaTeX of the equation BEFORE this step",
         "work_math": "LaTeX showing the vertical work.",
         "question": "What is the best next step?",
-        "options": [
-           {"text": "Correct", "correct": true, "feedback": "..."},
-           {"text": "Distractor 1", "correct": false, "feedback": "..."},
-           {"text": "Distractor 2", "correct": false, "feedback": "..."},
-           {"text": "Distractor 3", "correct": false, "feedback": "..."}
-        ]
+        "options": [ ... ]
       }
     ]
     
     RULE 1: NO REDUNDANCY
-    - The "work_math" should ONLY show the operation performed (red text).
-    - Do NOT include the result row.
+    - Do NOT include the result row (answer) for intermediate steps.
+    - EXCEPTION: For the VERY LAST step, DO include the result row (e.g. x=5) so the student sees the final answer.
     
-    RULE 2: PERFECT ALIGNMENT
-    - Use `\begin{array}{rcl}` (Right, Center, Right) for vertical arithmetic.
-    - Example:
-      "work_math": "\\begin{array}{rcl} 2x + 15 & = & 35 \\\\ \\color{red}{-15} & & \\color{red}{-15} \\end{array}"
+    RULE 2: PERFECT ALIGNMENT (Use 4 Columns)
+    - Use `\begin{array}{r r c r}` (Right, Right, Center, Right).
+    - Col 1: Variables (2x)
+    - Col 2: Constants Left (+15) -> RIGHT ALIGNED
+    - Col 3: Equals (=)
+    - Col 4: Constants Right (35) -> RIGHT ALIGNED
     
-    RULE 3: PROVIDE 4 OPTIONS
-    - Always provide 1 correct answer and 3 incorrect distractors.
+    This Right-Alignment forces digits to stack perfectly (units over units).
+    
+    Example for "2x + 15 = 35" (Subtracting 15):
+    "work_math": "\\begin{array}{r r c r} 2x & +15 & = & 35 \\\\ & \\color{red}{-15} & & \\color{red}{-15} \\end{array}"
+    
+    (Notice how -15 will right-align under 35, making the 5s match perfectly.)
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -285,12 +280,6 @@ if st.session_state.solution_data:
             with col_math:
                 interaction = st.session_state.interactions.get(i)
                 
-                # Logic:
-                # 1. Past Step: Show the work (red text)
-                # 2. Current Step (Solved): Show the work (red text)
-                # 3. Current Step (Unsolved): Show initial equation (black text)
-                
-                # Use .get() to safely access keys even if AI forgets one
                 work_math = step.get('work_math', '')
                 initial_math = step.get('initial_math', '')
 
@@ -306,12 +295,9 @@ if st.session_state.solution_data:
                 st.markdown(f"**Step {i+1}:** {step.get('question', '')}")
                 interaction = st.session_state.interactions.get(i)
                 
-                # --- DISPLAY INTERACTIONS SAFELY ---
                 if interaction and interaction["correct"]:
                     sel_idx = interaction["choice"]
                     opt = step['options'][sel_idx]
-                    
-                    # USE SAFETY PARSER HERE
                     orig_text, _, clean_fb, _ = safe_parse_option(opt, sel_idx)
                     
                     st.success(f"**{orig_text}**\n\n{clean_fb}")
@@ -330,19 +316,13 @@ if st.session_state.solution_data:
                                 st.rerun()
 
                 else:
-                    # WRONG GUESS or NO GUESS
                     if interaction and not interaction["correct"]:
                         sel_idx = interaction["choice"]
                         opt = step['options'][sel_idx]
-                        
-                        # USE SAFETY PARSER HERE
                         orig_text, _, clean_fb, _ = safe_parse_option(opt, sel_idx)
-                        
                         st.error(f"**{orig_text}**\n\n{clean_fb}")
 
-                    # RENDER BUTTONS LOOP
                     for idx, option in enumerate(step['options']):
-                        # USE SAFETY PARSER HERE
                         orig_text, clean_btn_text, _, is_corr = safe_parse_option(option, idx)
                         
                         def on_click(step_i, opt_i, is_corr_val):
