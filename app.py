@@ -74,6 +74,12 @@ if "step_count" not in st.session_state: st.session_state.step_count = 0
 if "solution_data" not in st.session_state: st.session_state.solution_data = None
 if "interactions" not in st.session_state: st.session_state.interactions = {}
 
+# --- HELPER: TEXT CLEANER ---
+def clean_feedback(text):
+    """Removes LaTeX delimiters ($) from feedback text so it reads naturally."""
+    if not text: return ""
+    return text.replace('$', '').replace('\\', '')
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Settings")
@@ -143,7 +149,8 @@ if st.button("🚀 Start Interactive Solve", use_container_width=True):
     RULES:
     1. "math_display": Use LaTeX. For vertical math, use '\begin{aligned}' or simple newlines '\\'.
     2. "options": Scramble the order. Mark only one as "correct": true.
-    3. If image is unsafe/non-math, return {"error": "..."}
+    3. **IMPORTANT**: In the "feedback" and "text" fields, use PLAIN TEXT ONLY. Do not use LaTeX or '$' signs.
+    4. If image is unsafe/non-math, return {"error": "..."}
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -191,7 +198,6 @@ if st.session_state.solution_data:
                 elif interaction and interaction["correct"]:
                     show_math = True
                 
-                # FIXED: No more "math-container" div wrapper. Just clean math.
                 if show_math:
                     st.latex(step['math_display'])
                 else:
@@ -208,7 +214,11 @@ if st.session_state.solution_data:
                     # --- SUCCESS STATE ---
                     sel_idx = interaction["choice"]
                     opt = step['options'][sel_idx]
-                    st.markdown(f'<div class="success-box">✅ <b>{opt["text"]}</b><br>{opt["feedback"]}</div>', unsafe_allow_html=True)
+                    
+                    # We clean the feedback text before showing it
+                    clean_fb = clean_feedback(opt["feedback"])
+                    
+                    st.markdown(f'<div class="success-box">✅ <b>{opt["text"]}</b><br>{clean_fb}</div>', unsafe_allow_html=True)
                     
                     # Next Button (Only for current step)
                     if i == st.session_state.step_count:
@@ -231,7 +241,8 @@ if st.session_state.solution_data:
                     if interaction and not interaction["correct"]:
                         sel_idx = interaction["choice"]
                         opt = step['options'][sel_idx]
-                        st.markdown(f'<div class="error-box">❌ <b>{opt["text"]}</b><br>{opt["feedback"]}</div>', unsafe_allow_html=True)
+                        clean_fb = clean_feedback(opt["feedback"])
+                        st.markdown(f'<div class="error-box">❌ <b>{opt["text"]}</b><br>{clean_fb}</div>', unsafe_allow_html=True)
 
                     # Display Buttons
                     for idx, option in enumerate(step['options']):
