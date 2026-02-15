@@ -142,10 +142,10 @@ with tab_type:
         with c1:
             with st.popover("a / b"): 
                 st.write("**Fraction**")
-                num = st.text_input("Top")
-                den = st.text_input("Bottom")
-                # FIX: Added unique key 'btn_frac'
-                if st.button("Insert Fraction", key="btn_frac"):
+                # Added keys 'frac_top' and 'frac_bot'
+                num = st.text_input("Top", key="frac_top")
+                den = st.text_input("Bottom", key="frac_bot")
+                if st.button("Insert", key="btn_frac"):
                     add_text(f"({num})/({den})")
                     st.rerun()
 
@@ -153,10 +153,10 @@ with tab_type:
         with c2:
             with st.popover("xʸ"): 
                 st.write("**Exponent**")
-                base = st.text_input("Base")
-                exp = st.text_input("Power")
-                # FIX: Added unique key 'btn_exp'
-                if st.button("Insert Power", key="btn_exp"):
+                # Added keys 'exp_base' and 'exp_pow'
+                base = st.text_input("Base", key="exp_base")
+                exp = st.text_input("Power", key="exp_pow")
+                if st.button("Insert", key="btn_exp"):
                     add_text(f"({base})^({exp})")
                     st.rerun()
 
@@ -164,10 +164,10 @@ with tab_type:
         with c3:
             with st.popover("ⁿ√x"):
                 st.write("**Root**")
-                rad = st.text_input("Value")
-                idx = st.text_input("Index (Optional)")
-                # FIX: Added unique key 'btn_root'
-                if st.button("Insert Root", key="btn_root"):
+                # Added keys 'root_val' and 'root_idx'
+                rad = st.text_input("Value", key="root_val")
+                idx = st.text_input("Index (Optional)", key="root_idx")
+                if st.button("Insert", key="btn_root"):
                     if idx: add_text(f"root({rad}, {idx})")
                     else: add_text(f"sqrt({rad})")
                     st.rerun()
@@ -188,9 +188,9 @@ with tab_type:
         with c1: 
             with st.popover("logₙ"):
                 st.write("Logarithm")
-                val = st.text_input("Value")
-                base = st.text_input("Base")
-                # FIX: Added unique key 'btn_log'
+                # Added keys 'log_val' and 'log_base'
+                val = st.text_input("Value", key="log_val")
+                base = st.text_input("Base", key="log_base")
                 if st.button("Insert Log", key="btn_log"):
                     if base: add_text(f"log({val}, {base})")
                     else: add_text(f"log({val})")
