@@ -222,7 +222,7 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     else:
         st.warning("⚠️ Please provide a problem first!"); st.stop()
 
-    # --- UPDATED SYSTEM PROMPT FOR PERFECT FLOW & ALIGNMENT ---
+    # --- SYSTEM PROMPT ---
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
     
@@ -252,11 +252,6 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     Example for "2x + 15 = 35" (Subtracting 15):
     "initial_math": "2x + 15 = 35",
     "work_math": "\\begin{array}{rcl} 2x + 15 & = & 35 \\\\ \\color{red}{-15} & & \\color{red}{-15} \\end{array}"
-    
-    (Notice: No result row. No \hline. Just the red subtraction.)
-    
-    Example for "3x = 15" (Dividing):
-    "work_math": "\\begin{array}{rcl} \\frac{3x}{3} & = & \\frac{15}{3} \\end{array}"
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -314,10 +309,13 @@ if st.session_state.solution_data:
                     sel_idx = interaction["choice"]
                     opt = step['options'][sel_idx]
                     
-                    fb_text = opt.get("feedback", "")
-                    clean_fb = str(fb_text).replace('$', '').replace('\\', '')
-                    
-                    st.success(f"**{opt['text']}**\n\n{clean_fb}")
+                    # Robust feedback access
+                    if isinstance(opt, dict):
+                         fb_text = opt.get("feedback", "")
+                         clean_fb = str(fb_text).replace('$', '').replace('\\', '')
+                         st.success(f"**{opt.get('text', '')}**\n\n{clean_fb}")
+                    else:
+                         st.success(f"**{opt}**") # Fallback for simple string
                     
                     if i == st.session_state.step_count:
                         if i < len(steps) - 1:
@@ -337,21 +335,31 @@ if st.session_state.solution_data:
                         sel_idx = interaction["choice"]
                         opt = step['options'][sel_idx]
                         
-                        fb_text = opt.get("feedback", "")
-                        clean_fb = str(fb_text).replace('$', '').replace('\\', '')
-                        
-                        st.error(f"**{opt['text']}**\n\n{clean_fb}")
+                        if isinstance(opt, dict):
+                            fb_text = opt.get("feedback", "")
+                            clean_fb = str(fb_text).replace('$', '').replace('\\', '')
+                            st.error(f"**{opt.get('text', '')}**\n\n{clean_fb}")
+                        else:
+                            st.error(f"**{opt}**")
 
                     for idx, option in enumerate(step['options']):
                         def on_click(step_i, opt_i, is_corr):
                             st.session_state.interactions[step_i] = {"choice": opt_i, "correct": is_corr}
                         
-                        raw_text = option.get("text", f"Option {idx+1}")
+                        # --- ROBUST TYPE CHECKING ---
+                        if isinstance(option, dict):
+                             raw_text = option.get("text", f"Option {idx+1}")
+                             is_corr = option.get("correct", False)
+                        else:
+                             # If AI sends just a string "Subtract 5"
+                             raw_text = str(option)
+                             is_corr = False # Default to false if malformed
+                        
                         safe_text = str(raw_text)
                         clean_btn_text = safe_text.replace('$', '').replace('\\', '')
                         
                         if st.button(clean_btn_text, key=f"btn_{i}_{idx}"):
-                            on_click(i, idx, option["correct"])
+                            on_click(i, idx, is_corr)
                             st.rerun()
 
         st.markdown("---")
