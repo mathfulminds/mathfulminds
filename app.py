@@ -112,4 +112,150 @@ with tab_draw:
         canvas_result = st_canvas(stroke_width=3, stroke_color="#000", background_color="#fff", height=250, width=500, key="canvas")
         if canvas_result.image_data is not None and canvas_result.json_data is not None:
              if len(canvas_result.json_data["objects"]) > 0:
-                input_image = Image.fromarray(canvas_result.image_data.)
+                input_image = Image.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA').convert('RGB')
+
+with tab_type:
+    text_val = st.text_area("Enter Math Problem", placeholder="e.g., 2x + 10 = 30", key="text_input")
+    if text_val: input_text = text_val
+
+# --- SOLVER LOGIC ---
+if st.button("🚀 Start Interactive Solve", use_container_width=True):
+    # Reset State
+    st.session_state.step_count = 0
+    st.session_state.solution_data = None
+    st.session_state.interactions = {}
+    
+    # Priority Check
+    final_prompt = []
+    if input_text:
+        final_prompt = [f"Grade Level: {grade_level}. Problem: {input_text}"]
+    elif input_image:
+        final_prompt = [f"Grade Level: {grade_level}. Solve the problem in this image.", input_image]
+    else:
+        st.warning("⚠️ Please provide a problem first!"); st.stop()
+
+    # --- SYSTEM PROMPT ---
+    SYSTEM_INSTRUCTION = r"""
+    You are Mathful, an Interactive Math Tutor.
+    
+    GOAL: Break the problem into steps. For each step, provide the CORRECT next move and 2 INCORRECT "distractor" moves.
+    
+    OUTPUT FORMAT: JSON ONLY.
+    Structure:
+    [
+      {
+        "math_display": "LaTeX of the work AFTER this step is done",
+        "question": "What is the best next step?",
+        "options": [
+          {"text": "Correct Option", "correct": true, "feedback": "Explanation why correct."},
+          {"text": "Wrong Option 1", "correct": false, "feedback": "Explanation why wrong."},
+          {"text": "Wrong Option 2", "correct": false, "feedback": "Explanation why wrong."}
+        ]
+      }
+    ]
+    
+    RULES:
+    1. "math_display": Use LaTeX. For vertical math, use '\begin{aligned}' or simple newlines '\\'.
+    2. "options": Scramble the order. Mark only one as "correct": true.
+    3. If image is unsafe/non-math, return {"error": "..."}
+    """
+
+    model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
+    
+    with st.spinner("Generating interactive lesson..."):
+        try:
+            response = model.generate_content(final_prompt)
+            text_data = response.text.strip().replace("```json", "").replace("```", "")
+            data = json.loads(text_data)
+            
+            if isinstance(data, dict) and "error" in data:
+                st.error(data["error"])
+            else:
+                st.session_state.solution_data = data
+                
+        except Exception as e:
+            st.error("I got confused. Try a simpler problem!")
+
+# --- DISPLAY LOGIC ---
+if st.session_state.solution_data:
+    steps = st.session_state.solution_data
+    
+    st.divider()
+    
+    # Loop through ALL steps
+    for i in range(len(steps)):
+        # Only show steps we have reached
+        if i > st.session_state.step_count:
+            break
+            
+        step = steps[i]
+        
+        # Container for the Row
+        with st.container():
+            col_math, col_interaction = st.columns([1, 1])
+            
+            # --- LEFT COLUMN: MATH ---
+            with col_math:
+                # Logic: Show math if we are PAST this step OR if we solved it correctly
+                interaction = st.session_state.interactions.get(i)
+                show_math = False
+                
+                if i < st.session_state.step_count:
+                    show_math = True
+                elif interaction and interaction["correct"]:
+                    show_math = True
+                
+                st.markdown(f'<div class="math-container">', unsafe_allow_html=True)
+                if show_math:
+                    st.latex(step['math_display'])
+                else:
+                    st.markdown('<span class="blur-text">HIDDEN</span><br>🔒 <i>Solve to reveal</i>', unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            # --- RIGHT COLUMN: INTERACTION ---
+            with col_interaction:
+                st.markdown(f"**Step {i+1}:** {step['question']}")
+                
+                # Check interaction history
+                interaction = st.session_state.interactions.get(i)
+                
+                if interaction and interaction["correct"]:
+                    # --- SUCCESS STATE ---
+                    sel_idx = interaction["choice"]
+                    opt = step['options'][sel_idx]
+                    st.markdown(f'<div class="success-box">✅ <b>{opt["text"]}</b><br>{opt["feedback"]}</div>', unsafe_allow_html=True)
+                    
+                    # Next Button (Only for current step)
+                    if i == st.session_state.step_count:
+                        if i < len(steps) - 1:
+                            if st.button("Next Step ➡️", key=f"next_{i}"):
+                                st.session_state.step_count += 1
+                                st.rerun()
+                        else:
+                            st.balloons()
+                            st.success("🎉 Problem Complete!")
+                            if st.button("Start New Problem"):
+                                st.session_state.solution_data = None
+                                st.session_state.step_count = 0
+                                st.rerun()
+
+                else:
+                    # --- CHOICE STATE ---
+                    
+                    # If they guessed wrong previously, show error
+                    if interaction and not interaction["correct"]:
+                        sel_idx = interaction["choice"]
+                        opt = step['options'][sel_idx]
+                        st.markdown(f'<div class="error-box">❌ <b>{opt["text"]}</b><br>{opt["feedback"]}</div>', unsafe_allow_html=True)
+
+                    # Display Buttons
+                    for idx, option in enumerate(step['options']):
+                        # Button Callback
+                        def on_click(step_i, opt_i, is_corr):
+                            st.session_state.interactions[step_i] = {"choice": opt_i, "correct": is_corr}
+                        
+                        if st.button(option["text"], key=f"btn_{i}_{idx}"):
+                            on_click(i, idx, option["correct"])
+                            st.rerun()
+
+        st.markdown("---")
