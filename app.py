@@ -79,12 +79,14 @@ MODEL_NAME = 'gemini-flash-latest'
 if "step_count" not in st.session_state: st.session_state.step_count = 0
 if "solution_data" not in st.session_state: st.session_state.solution_data = None
 if "interactions" not in st.session_state: st.session_state.interactions = {}
-# Initialize the text input value if not present
-if "input_text_val" not in st.session_state: st.session_state.input_text_val = ""
+
+# IMPORTANT: Initialize the key we will bind to the text area
+if "user_problem" not in st.session_state: st.session_state.user_problem = ""
 
 # --- HELPER TO ADD SYMBOL ---
 def add_symbol(sym):
-    st.session_state.input_text_val += sym
+    # This directly modifies the session state variable bound to the text box
+    st.session_state.user_problem += sym
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -115,7 +117,7 @@ with tab_draw:
 with tab_type:
     st.write("Math Keypad:")
     
-    # ROW 1: Operations & Parentheses (The essentials you asked for)
+    # ROW 1: Operations
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1: st.button("➕", on_click=add_symbol, args=("+",))
     with c2: st.button("➖", on_click=add_symbol, args=("-",))
@@ -143,21 +145,15 @@ with tab_type:
         with t5: st.button("ln", on_click=add_symbol, args=("ln(",))
         with t6: st.button("!", on_click=add_symbol, args=("!",))
 
-    # The Text Area (Synced)
-    # Note: We use `value=` to force the box to show what's in session state
-    text_val = st.text_area(
+    # THE TEXT AREA (Bound directly to session state)
+    # The key="user_problem" connects this box to st.session_state.user_problem
+    # When the buttons update the state, this box updates automatically.
+    input_text = st.text_area(
         "", 
-        value=st.session_state.input_text_val,
+        key="user_problem",
         placeholder="Type here or click buttons above...", 
-        key="text_input_area",
         height=100
     )
-    
-    # IMPORTANT: Update session state when user types manually
-    if text_val != st.session_state.input_text_val:
-        st.session_state.input_text_val = text_val
-        
-    if text_val: input_text = text_val
 
 # --- SOLVER LOGIC ---
 if st.button("🚀 Start Interactive Solve", type="primary", use_container_width=True):
