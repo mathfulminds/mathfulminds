@@ -231,33 +231,33 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
     
-    GOAL: Break the problem into steps.
+    GOAL: Break the problem into steps. For each step, provide:
+    1. The visual math work (showing operations on both sides).
+    2. A multiple-choice question to guide the student.
     
     OUTPUT FORMAT: JSON ONLY.
     Structure:
     [
       {
-        "math_display": "The visual work for THIS step.",
+        "math_display": "LaTeX string",
         "question": "What is the best next step?",
-        "options": [ ... ]
+        "options": [
+          {"text": "Correct Option", "correct": true, "feedback": "Explanation."},
+          {"text": "Wrong Option 1", "correct": false, "feedback": "Explanation."},
+          {"text": "Wrong Option 2", "correct": false, "feedback": "Explanation."}
+        ]
       }
     ]
     
-    CRITICAL RULES FOR "math_display":
-    1. **TIMING:** The "math_display" for Step 1 must show the work PERFORMED in Step 1. Do NOT just show the starting equation.
-       - Correct: Show the subtraction occurring.
-       - Incorrect: Just showing "2x + 5 = 25".
+    CRITICAL RULE FOR "math_display":
+    You MUST show the vertical work for algebraic steps.
+    Use '\begin{array}' to stack the equation, the operation (in RED), and the result.
+    Align them properly.
     
-    2. **ALIGNMENT:** You must use an array with 3 columns {r c l} to align the work.
-       - Right-align the Left side.
-       - Center-align the Equals sign.
-       - Left-align the Right side.
-       
-    Example of Subtracting 5:
-    "\\begin{array}{r c l} 2x + 5 & = & 25 \\\\ \\color{red}{-5} & & \\color{red}{-5} \\\\ \\hline 2x & = & 20 \\end{array}"
+    Example:
+    "2x + 5 = 20 \\\\ {\color{red} -5 \quad -5} \\\\ 2x = 15"
     
-    Example of Dividing by 2:
-    "\\begin{array}{r c l} \\frac{2x}{2} & = & \\frac{20}{2} \\\\ x & = & 10 \\end{array}"
+    If no vertical work is needed, just show the equation.
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -337,7 +337,13 @@ if st.session_state.solution_data:
                         def on_click(step_i, opt_i, is_corr):
                             st.session_state.interactions[step_i] = {"choice": opt_i, "correct": is_corr}
                         
-                        clean_btn_text = option["text"].replace('$', '').replace('\\', '')
+                        # --- CRASH FIX HERE ---
+                        # We defensively get the text. If it's missing, we default to "Option {idx+1}"
+                        raw_text = option.get("text", f"Option {idx+1}")
+                        # Force it to be a string just in case
+                        safe_text = str(raw_text)
+                        clean_btn_text = safe_text.replace('$', '').replace('\\', '')
+                        
                         if st.button(clean_btn_text, key=f"btn_{i}_{idx}"):
                             on_click(i, idx, option["correct"])
                             st.rerun()
