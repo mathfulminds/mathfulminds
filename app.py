@@ -73,7 +73,7 @@ st.markdown("""
         font-size: 1.1rem;
     }
     
-    /* Locked State */
+    /* Locked State (Now mostly unused, but kept for safety) */
     .locked-state {
         color: #94A3B8;
         font-style: italic;
@@ -231,15 +231,14 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
     
-    GOAL: Break the problem into steps. For each step, provide:
-    1. The visual math work (showing operations on both sides).
-    2. A multiple-choice question to guide the student.
+    GOAL: Break the problem into steps.
     
     OUTPUT FORMAT: JSON ONLY.
     Structure:
     [
       {
-        "math_display": "LaTeX string",
+        "initial_math": "LaTeX of the equation BEFORE this step (e.g. 2x + 15 = 35)",
+        "work_math": "LaTeX showing the vertical work performed (e.g. subtracting 15)",
         "question": "What is the best next step?",
         "options": [
           {"text": "Correct Option", "correct": true, "feedback": "Explanation."},
@@ -249,15 +248,17 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
       }
     ]
     
-    CRITICAL RULE FOR "math_display":
-    You MUST show the vertical work for algebraic steps.
-    Use '\begin{array}' to stack the equation, the operation (in RED), and the result.
-    Align them properly.
+    CRITICAL RULE FOR "work_math" ALIGNMENT:
+    You MUST use a 4-column array {rrcl} to perfectly align terms.
+    Split the equation like this: [Term 1] [Operator+Term 2] [Equals] [Right Side]
     
-    Example:
-    "2x + 5 = 20 \\\\ {\color{red} -5 \quad -5} \\\\ 2x = 15"
+    Example for "2x + 15 = 35" (Subtracting 15):
+    "\\begin{array}{rrcl} 2x & + 15 & = & 35 \\\\ & \\color{red}{-15} & & \\color{red}{-15} \\\\ \\hline 2x & & = & 20 \\end{array}"
     
-    If no vertical work is needed, just show the equation.
+    Example for "3x - 4 = 11" (Adding 4):
+    "\\begin{array}{rrcl} 3x & - 4 & = & 11 \\\\ & \\color{red}{+4} & & \\color{red}{+4} \\\\ \\hline 3x & & = & 15 \\end{array}"
+    
+    If vertical work is not applicable (like dividing), just show standard stacking.
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -293,17 +294,25 @@ if st.session_state.solution_data:
             
             with col_math:
                 interaction = st.session_state.interactions.get(i)
-                show_math = False
+                
+                # --- NEW DISPLAY LOGIC ---
+                # 1. If we are on a PAST step, we show the finished work.
+                # 2. If we are on the CURRENT step:
+                #    - If UNSOLVED: Show the "initial_math" (The Problem First!)
+                #    - If SOLVED: Show the "work_math" (The Red Vertical Work)
                 
                 if i < st.session_state.step_count:
-                    show_math = True
-                elif interaction and interaction["correct"]:
-                    show_math = True
-                
-                if show_math:
-                    st.latex(step['math_display'])
-                else:
-                    st.markdown('<div class="locked-state">🔒 Solve step to reveal work</div>', unsafe_allow_html=True)
+                    # Past Step -> Show finished work
+                    st.latex(step['work_math'])
+                    
+                elif i == st.session_state.step_count:
+                    # Current Step
+                    if interaction and interaction["correct"]:
+                         # User got it right -> Show vertical work
+                        st.latex(step['work_math'])
+                    else:
+                        # User hasn't solved it yet -> Show the problem!
+                        st.latex(step['initial_math'])
             
             with col_interaction:
                 st.markdown(f"**Step {i+1}:** {step['question']}")
@@ -312,7 +321,12 @@ if st.session_state.solution_data:
                 if interaction and interaction["correct"]:
                     sel_idx = interaction["choice"]
                     opt = step['options'][sel_idx]
-                    st.success(f"**{opt['text']}**\n\n{opt['feedback']}")
+                    
+                    # Clean feedback text safety
+                    fb_text = opt.get("feedback", "")
+                    clean_fb = str(fb_text).replace('$', '').replace('\\', '')
+                    
+                    st.success(f"**{opt['text']}**\n\n{clean_fb}")
                     
                     if i == st.session_state.step_count:
                         if i < len(steps) - 1:
@@ -331,16 +345,17 @@ if st.session_state.solution_data:
                     if interaction and not interaction["correct"]:
                         sel_idx = interaction["choice"]
                         opt = step['options'][sel_idx]
-                        st.error(f"**{opt['text']}**\n\n{opt['feedback']}")
+                        
+                        fb_text = opt.get("feedback", "")
+                        clean_fb = str(fb_text).replace('$', '').replace('\\', '')
+                        
+                        st.error(f"**{opt['text']}**\n\n{clean_fb}")
 
                     for idx, option in enumerate(step['options']):
                         def on_click(step_i, opt_i, is_corr):
                             st.session_state.interactions[step_i] = {"choice": opt_i, "correct": is_corr}
                         
-                        # --- CRASH FIX HERE ---
-                        # We defensively get the text. If it's missing, we default to "Option {idx+1}"
                         raw_text = option.get("text", f"Option {idx+1}")
-                        # Force it to be a string just in case
                         safe_text = str(raw_text)
                         clean_btn_text = safe_text.replace('$', '').replace('\\', '')
                         
