@@ -144,7 +144,8 @@ with tab_type:
                 st.write("**Fraction**")
                 num = st.text_input("Top")
                 den = st.text_input("Bottom")
-                if st.button("Insert"):
+                # FIX: Added unique key 'btn_frac'
+                if st.button("Insert Fraction", key="btn_frac"):
                     add_text(f"({num})/({den})")
                     st.rerun()
 
@@ -154,7 +155,8 @@ with tab_type:
                 st.write("**Exponent**")
                 base = st.text_input("Base")
                 exp = st.text_input("Power")
-                if st.button("Insert"):
+                # FIX: Added unique key 'btn_exp'
+                if st.button("Insert Power", key="btn_exp"):
                     add_text(f"({base})^({exp})")
                     st.rerun()
 
@@ -164,7 +166,8 @@ with tab_type:
                 st.write("**Root**")
                 rad = st.text_input("Value")
                 idx = st.text_input("Index (Optional)")
-                if st.button("Insert"):
+                # FIX: Added unique key 'btn_root'
+                if st.button("Insert Root", key="btn_root"):
                     if idx: add_text(f"root({rad}, {idx})")
                     else: add_text(f"sqrt({rad})")
                     st.rerun()
@@ -187,7 +190,8 @@ with tab_type:
                 st.write("Logarithm")
                 val = st.text_input("Value")
                 base = st.text_input("Base")
-                if st.button("Insert Log"):
+                # FIX: Added unique key 'btn_log'
+                if st.button("Insert Log", key="btn_log"):
                     if base: add_text(f"log({val}, {base})")
                     else: add_text(f"log({val})")
                     st.rerun()
@@ -227,7 +231,7 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     else:
         st.warning("⚠️ Please provide a problem first!"); st.stop()
 
-    # --- UPDATED SYSTEM PROMPT FOR VERTICAL MATH ---
+    # --- SYSTEM PROMPT ---
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
     
@@ -252,12 +256,10 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     CRITICAL RULE FOR "math_display":
     You MUST show the vertical work for algebraic steps.
     Use '\begin{array}' to stack the equation, the operation (in RED), and the result.
+    Align them properly.
     
-    Example for "Subtract 5 from both sides of 2x + 5 = 20":
-    "2x + 5 = 20 \\\\ {\color{red} -5 \quad -5} \\\\ \hline 2x = 15"
-    
-    Example for "Divide by 2":
-    "\frac{2x}{2} = \frac{15}{2} \\\\ x = 7.5"
+    Example:
+    "2x + 5 = 20 \\\\ {\color{red} -5 \quad -5} \\\\ 2x = 15"
     
     If no vertical work is needed, just show the equation.
     """
@@ -303,7 +305,6 @@ if st.session_state.solution_data:
                     show_math = True
                 
                 if show_math:
-                    # Renders the vertical stack with red operations
                     st.latex(step['math_display'])
                 else:
                     st.markdown('<div class="locked-state">🔒 Solve step to reveal work</div>', unsafe_allow_html=True)
