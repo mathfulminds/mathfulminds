@@ -43,12 +43,12 @@ st.markdown("""
         background-color: #F1F5F9;
         color: #334155;
         border: 1px solid #CBD5E1;
-        padding: 2px 5px; 
-        font-size: 0.85rem;
+        padding: 0px; 
+        font-size: 1rem;
         font-weight: 600;
         border-radius: 6px;
         width: 100%;
-        min-height: 40px; /* Ensure touch target size */
+        min-height: 40px;
     }
     div.stButton > button:hover {
         background-color: #E2E8F0;
@@ -62,12 +62,6 @@ st.markdown("""
         border: none;
         padding: 10px 20px;
         font-size: 1rem;
-    }
-    
-    /* Expander Styling */
-    .streamlit-expanderHeader {
-        font-weight: 600;
-        color: #475569;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -85,7 +79,12 @@ MODEL_NAME = 'gemini-flash-latest'
 if "step_count" not in st.session_state: st.session_state.step_count = 0
 if "solution_data" not in st.session_state: st.session_state.solution_data = None
 if "interactions" not in st.session_state: st.session_state.interactions = {}
+# Initialize the text input value if not present
 if "input_text_val" not in st.session_state: st.session_state.input_text_val = ""
+
+# --- HELPER TO ADD SYMBOL ---
+def add_symbol(sym):
+    st.session_state.input_text_val += sym
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -114,86 +113,50 @@ with tab_draw:
                 input_image = Image.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA').convert('RGB')
 
 with tab_type:
-    # --- FORMULA EDITOR TOOLBAR ---
-    
-    # Helper function to append text
-    def add_symbol(sym):
-        st.session_state.input_text_val += sym
-    
     st.write("Math Keypad:")
     
-    # ROW 1: Essentials (Numbers, exponents, roots)
+    # ROW 1: Operations & Parentheses (The essentials you asked for)
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    with c1: 
-        if st.button("x²"): add_symbol("^2")
-    with c2: 
-        if st.button("xʸ"): add_symbol("^")
-    with c3: 
-        if st.button("√x"): add_symbol("sqrt()")
-    with c4: 
-        if st.button("|x|"): add_symbol("| |")
-    with c5: 
-        if st.button("π"): add_symbol("pi")
-    with c6: 
-        if st.button("÷"): add_symbol("/")
+    with c1: st.button("➕", on_click=add_symbol, args=("+",))
+    with c2: st.button("➖", on_click=add_symbol, args=("-",))
+    with c3: st.button("✖️", on_click=add_symbol, args=("*",))
+    with c4: st.button("➗", on_click=add_symbol, args=("/",))
+    with c5: st.button("(", on_click=add_symbol, args=("(",))
+    with c6: st.button(")", on_click=add_symbol, args=(")",))
 
-    # ROW 2: Inequalities & Algebra
+    # ROW 2: Variables & Algebra
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    with c1: 
-        if st.button("≤"): add_symbol("<=")
-    with c2: 
-        if st.button("≥"): add_symbol(">=")
-    with c3: 
-        if st.button("≠"): add_symbol("!=")
-    with c4: 
-        if st.button("∞"): add_symbol("infinity")
-    with c5: 
-        if st.button("("): add_symbol("(")
-    with c6: 
-        if st.button(")"): add_symbol(")")
+    with c1: st.button("x²", on_click=add_symbol, args=("^2",))
+    with c2: st.button("√", on_click=add_symbol, args=("sqrt(",))
+    with c3: st.button("≤", on_click=add_symbol, args=("≤",))
+    with c4: st.button("≥", on_click=add_symbol, args=("≥",))
+    with c5: st.button("π", on_click=add_symbol, args=("pi",))
+    with c6: st.button("|x|", on_click=add_symbol, args=("|",))
 
-    # EXPANDER: Advanced Functions (Trig, Log, etc.)
-    with st.expander("Show Trig, Log, and Funcs"):
-        # Trig Row
+    # EXPANDER: Advanced Trig/Log
+    with st.expander("More Functions (Trig, Log, etc.)"):
         t1, t2, t3, t4, t5, t6 = st.columns(6)
-        with t1: 
-            if st.button("sin"): add_symbol("sin()")
-        with t2: 
-            if st.button("cos"): add_symbol("cos()")
-        with t3: 
-            if st.button("tan"): add_symbol("tan()")
-        with t4: 
-            if st.button("csc"): add_symbol("csc()")
-        with t5: 
-            if st.button("sec"): add_symbol("sec()")
-        with t6: 
-            if st.button("cot"): add_symbol("cot()")
-            
-        # Log/Roots Row
-        l1, l2, l3, l4, l5, l6 = st.columns(6)
-        with l1: 
-            if st.button("log"): add_symbol("log()")
-        with l2: 
-            if st.button("ln"): add_symbol("ln()")
-        with l3: 
-            if st.button("e"): add_symbol("e")
-        with l4: 
-            if st.button("n√"): add_symbol("nth_root( , )")
-        with l5: 
-            if st.button("!"): add_symbol("!")
-        with l6: 
-            if st.button("%"): add_symbol("%")
+        with t1: st.button("sin", on_click=add_symbol, args=("sin(",))
+        with t2: st.button("cos", on_click=add_symbol, args=("cos(",))
+        with t3: st.button("tan", on_click=add_symbol, args=("tan(",))
+        with t4: st.button("log", on_click=add_symbol, args=("log(",))
+        with t5: st.button("ln", on_click=add_symbol, args=("ln(",))
+        with t6: st.button("!", on_click=add_symbol, args=("!",))
 
-    # The Text Area (connected to session state)
+    # The Text Area (Synced)
+    # Note: We use `value=` to force the box to show what's in session state
     text_val = st.text_area(
         "", 
         value=st.session_state.input_text_val,
-        placeholder="Type here or use the keypad above...", 
+        placeholder="Type here or click buttons above...", 
         key="text_input_area",
         height=100
     )
-    # Sync manual typing back to state
-    st.session_state.input_text_val = text_val
+    
+    # IMPORTANT: Update session state when user types manually
+    if text_val != st.session_state.input_text_val:
+        st.session_state.input_text_val = text_val
+        
     if text_val: input_text = text_val
 
 # --- SOLVER LOGIC ---
