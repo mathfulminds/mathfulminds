@@ -72,8 +72,6 @@ if not api_key:
     if not api_key: st.stop()
 
 genai.configure(api_key=api_key)
-
-# --- REVERTING TO THE MODEL NAME THAT WORKED FOR YOU ---
 MODEL_NAME = 'gemini-flash-latest'
 
 # --- SESSION STATE ---
@@ -87,7 +85,6 @@ def add_text(text):
     st.session_state.user_problem += text
 
 def extract_json_from_text(text):
-    """Aggressively finds the JSON list inside the text."""
     clean_text = text.replace("```json", "").replace("```", "").strip()
     try:
         match = re.search(r'\[.*\]', clean_text, re.DOTALL)
@@ -96,31 +93,83 @@ def extract_json_from_text(text):
     except:
         return clean_text
 
-def build_latex_from_parts(step_data):
+def build_latex_from_lists(step_data):
     """
-    THE ARCHITECT: Python builds the LaTeX grid, not the AI.
-    This prevents the AI from breaking the layout.
+    THE ANCHORED LIST ARCHITECT (Dynamic Columns):
+    Builds a LaTeX array that expands to fit the number of terms.
+    Zone A: Left Terms | Zone B: Separator | Zone C: Right Terms
     """
-    # 1. Get the raw parts
-    left = step_data.get("left_side", "")
-    right = step_data.get("right_side", "")
-    op_left = step_data.get("op_left", "")
-    op_right = step_data.get("op_right", "")
+    left_terms = step_data.get("left_terms", [])
+    separator = step_data.get("separator", "")
+    right_terms = step_data.get("right_terms", [])
     
-    # 2. If it's a simple text explanation (no equation), return raw
-    if not left and not right:
-        return step_data.get("initial_math", "")
+    # Operation Data
+    op_data = step_data.get("operation", {})
+    op_val = op_data.get("value", "")
+    # Indices are lists of integers (e.g. [0, 2]) meaning apply to term 0 and 2
+    targets_left = op_data.get("target_left", [])
+    targets_right = op_data.get("target_right", [])
 
-    # 3. If there is NO operation (just showing the equation), align nicely
-    if not op_left and not op_right:
-        return f"\\begin{{array}}{{r c l}} {left} & = & {right} \\end{{array}}"
+    # 1. Calculate Columns Needed
+    num_left = len(left_terms)
+    num_right = len(right_terms)
+    
+    # If empty lists (simplifying expression), ensure at least 1 col so LaTeX doesn't crash
+    if num_left == 0 and num_right == 0: return step_data.get("initial_math", "")
 
-    # 4. If there IS an operation (adding/dividing), build the 2-row grid
-    # We use color{red} for the operations
+    # 2. Build Column Format String (e.g., "c c c | c | c c")
+    # c = center aligned column
+    cols_latex = "c " * num_left
+    if separator:
+        cols_latex += "c " # The Separator Column
+    cols_latex += "c " * num_right
+
+    # 3. Build Row 1 (The Math Terms)
+    # Join terms with ' & '
+    row1_parts = []
+    
+    # Left Zone
+    for t in left_terms: row1_parts.append(str(t))
+    
+    # Separator Zone
+    if separator: row1_parts.append(separator)
+    
+    # Right Zone
+    for t in right_terms: row1_parts.append(str(t))
+    
+    row1_str = " & ".join(row1_parts)
+
+    # 4. Build Row 2 (The Red Operations)
+    if not op_val:
+        # No operation? Return 1-row array
+        return f"\\begin{{array}}{{{cols_latex}}} {row1_str} \\end{{array}}"
+
+    row2_parts = []
+    
+    # Left Operations
+    for i in range(num_left):
+        if i in targets_left:
+            row2_parts.append(f"\\color{{red}}{{{op_val}}}")
+        else:
+            row2_parts.append("") # Empty cell
+
+    # Separator Operation (Empty)
+    if separator: row2_parts.append("") 
+
+    # Right Operations
+    for i in range(num_right):
+        if i in targets_right:
+            row2_parts.append(f"\\color{{red}}{{{op_val}}}")
+        else:
+            row2_parts.append("") # Empty cell
+
+    row2_str = " & ".join(row2_parts)
+
+    # 5. Final Assembly
     return f"""
-    \\begin{{array}}{{r c l}}
-    {left} & = & {right} \\\\
-    \\color{{red}}{{{op_left}}} & & \\color{{red}}{{{op_right}}}
+    \\begin{{array}}{{{cols_latex}}}
+    {row1_str} \\\\
+    {row2_str}
     \\end{{array}}
     """
 
@@ -249,24 +298,27 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     else:
         st.warning("⚠️ Please provide a problem first!"); st.stop()
 
-    # --- SYSTEM PROMPT (ARCHITECT MODE) ---
+    # --- SYSTEM PROMPT (ANCHORED LIST SYSTEM) ---
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
-    GOAL: Break the problem into steps.
+    GOAL: Break the problem into steps using the "Anchored List" method for perfect alignment.
     
     OUTPUT FORMAT: JSON ONLY. 
-    
-    IMPORTANT: Do NOT write LaTeX arrays. Just give me the parts.
     
     Structure:
     [
       {
-        "left_side": "The left side of the equation (e.g. 5x - 3)",
-        "right_side": "The right side of the equation (e.g. 2x + 12)",
-        "op_left": "The operation to do on the left (e.g. -2x or \div 2). Leave empty if none.",
-        "op_right": "The operation to do on the right (e.g. -2x or \div 2). Leave empty if none.",
+        "left_terms": ["3x", "+5"],   // List of terms on the left.
+        "separator": "=",             // The symbol in the middle (=, <, >, or "" for expressions).
+        "right_terms": ["20"],        // List of terms on the right.
         
-        "final_answer": "OPTIONAL: If this is the LAST step, put result here (e.g. x=5).",
+        "operation": {
+            "value": "-5",              // The math to show in red (e.g. -5, \div 3).
+            "target_left": [1],         // Indices of left_terms to put op under (e.g. [1] puts it under +5).
+            "target_right": [0]         // Indices of right_terms to put op under.
+        },
+        
+        "final_answer": "OPTIONAL: If LAST step, result here (e.g. x=5).",
         "question": "What is the best next step?",
         "options": [
            {"text": "Correct Option", "feedback": "Explanation..."},
@@ -276,8 +328,9 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
       }
     ]
     
-    RULE 1: Correct Option First (Index 0).
-    RULE 2: For Division, use `\div 2`, not fractions.
+    RULE 1: Split terms logically. "3x + 5" -> ["3x", "+5"].
+    RULE 2: Indices start at 0.
+    RULE 3: If simplifying an expression, leave "separator" and "right_terms" empty.
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -289,8 +342,8 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
             data = json.loads(clean_json_text)
             
             for step in data:
-                # 1. BUILD THE MATH GRID using Python (The Architect)
-                step["display_math"] = build_latex_from_parts(step)
+                # 1. BUILD THE MATH GRID (Anchored Lists)
+                step["display_math"] = build_latex_from_lists(step)
                 
                 # 2. Shuffle Options
                 raw_options = step.get("options", [])
@@ -326,8 +379,6 @@ if st.session_state.solution_data:
             
             with col_math:
                 interaction = st.session_state.interactions.get(i)
-                
-                # USE THE PYTHON-BUILT MATH STRING
                 display_math = step.get("display_math", "")
 
                 if i < st.session_state.step_count:
@@ -335,11 +386,9 @@ if st.session_state.solution_data:
                 elif i == st.session_state.step_count:
                     if interaction and interaction["correct"]:
                         st.latex(display_math)
-                        
-                        # Check for Final Answer
                         final_val = step.get('final_answer', '')
                         if final_val:
-                            # Build a nice final answer grid too
+                            # Render final answer cleanly
                             if "=" in final_val:
                                 lhs, rhs = final_val.split("=", 1)
                                 final_grid = f"\\begin{{array}}{{r c l}} {lhs} & = & {rhs} \\end{{array}}"
@@ -347,12 +396,12 @@ if st.session_state.solution_data:
                             else:
                                 st.latex(final_val)
                     else:
-                        l = step.get("left_side", "")
-                        r = step.get("right_side", "")
-                        if l and r:
-                            st.latex(f"\\begin{{array}}{{r c l}} {l} & = & {r} \\end{{array}}")
-                        else:
-                            st.latex(step.get("initial_math", ""))
+                        # Fallback for unsolved state: Show just the equation row
+                        # We rebuild it using the builder but without operations
+                        fallback_step = step.copy()
+                        fallback_step["operation"] = {} # Remove ops
+                        fallback_math = build_latex_from_lists(fallback_step)
+                        st.latex(fallback_math)
             
             with col_interaction:
                 st.markdown(f"**Step {i+1}:** {step.get('question', '')}")
