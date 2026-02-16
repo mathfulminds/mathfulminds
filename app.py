@@ -30,7 +30,7 @@ st.markdown("""
         letter-spacing: -1px;
     }
     
-    /* Left Align Math for consistency */
+    /* Left Align Math */
     .katex-display {
         text-align: left !important;
         margin-left: 2rem !important;
@@ -72,7 +72,8 @@ if not api_key:
     if not api_key: st.stop()
 
 genai.configure(api_key=api_key)
-MODEL_NAME = 'gemini-flash-latest'
+# Switching to 1.5 Flash for better JSON handling
+MODEL_NAME = 'gemini-1.5-flash'
 
 # --- SESSION STATE ---
 if "step_count" not in st.session_state: st.session_state.step_count = 0
@@ -225,7 +226,7 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     else:
         st.warning("⚠️ Please provide a problem first!"); st.stop()
 
-    # --- SYSTEM PROMPT (UNIVERSAL ALGEBRA) ---
+    # --- SYSTEM PROMPT (Robust JSON Mode) ---
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
     
@@ -246,41 +247,38 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
       }
     ]
     
-    RULE 1: ALWAYS PUT THE CORRECT OPTION FIRST (Index 0).
-    - I will shuffle them in the app.
+    RULE 1: CORRECT OPTION FIRST.
+    - Index 0 is always correct. I shuffle later.
     
-    RULE 2: NO REDUNDANCY IN WORK
-    - "work_math" should only show operations. No results row.
+    RULE 2: NO REDUNDANCY.
+    - "work_math" shows operations only. No result row.
     
-    RULE 3: SMART ALIGNMENT (Choose the right one based on the problem)
-    
-    [SCENARIO A: Simple Algebra (2x + 5 = 15)]
-      Use `\begin{array}{r r c r}`.
-      Col 1: Variable Term (2x)
-      Col 2: Left Constant (+5) -> RIGHT ALIGNED
-      Col 3: Equals (=) -> CENTER ALIGNED
-      Col 4: Right Constant (15) -> RIGHT ALIGNED
-      Example: "\\begin{array}{r r c r} 2x & + 5 & = & 15 \\\\ & \\color{red}{-5} & & \\color{red}{-5} \\end{array}"
-    
-    [SCENARIO B: Systems of Equations (2x + y = 10, x - y = 5)]
-      Use a multi-column array to align variables.
-      Example: "\\begin{array}{r r r c r} 2x & + & y & = & 10 \\\\ x & - & y & = & 5 \\\\ \\hline 3x & & & = & 15 \\end{array}"
-    
-    [SCENARIO C: Complex/Horizontal (2(x+3) = 10)]
-      Just write the equation normally. Do not force an array if it breaks alignment.
+    RULE 3: FLEXIBLE ALIGNMENT (The "Safe" Grid)
+    - For SIMPLE equations (like 2x+5=15), use the 4-col grid: `\begin{array}{r r c r}`.
+    - For COMPLEX equations (Variables on both sides, or more terms):
+      Use a 3-column grid: `\begin{array}{r c l}`.
+      Col 1: Left Side (Right Aligned)
+      Col 2: Equals (=) (Center)
+      Col 3: Right Side (Left Aligned)
+      
+      Example (5x - 3 = 2x + 12):
+      "work_math": "\\begin{array}{r c l} 5x - 3 & = & 2x + 12 \\\\ \\color{red}{-2x} & & \\color{red}{-2x} \\end{array}"
+      (Note: Put the red text in Col 1 and Col 3. It won't be perfectly under the term, but it will be safe).
     
     RULE 4: RED DIVISION
     - Use `\color{red}{\div 2}`.
-    
-    RULE 5: PHANTOM ALIGNMENT
-    - Use `\phantom{}` in the final answer to keep alignment if needed.
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
     
     with st.spinner("Generating interactive lesson..."):
         try:
-            response = model.generate_content(final_prompt)
+            # Force JSON response type for stability
+            response = model.generate_content(
+                final_prompt,
+                generation_config={"response_mime_type": "application/json"}
+            )
+            
             clean_json_text = extract_json_from_text(response.text)
             data = json.loads(clean_json_text)
             
