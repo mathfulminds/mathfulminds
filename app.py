@@ -238,7 +238,7 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     - Col 3: Equals (=)
     - Col 4: Constants Right (35) -> RIGHT ALIGNED
     
-    This Right-Alignment forces digits to stack perfectly (units over units).
+    This Right-Alignment forces digits to stack perfectly (units over units), regardless of digit count.
     
     Example for "2x + 15 = 35" (Subtracting 15):
     "work_math": "\\begin{array}{r r c r} 2x & +15 & = & 35 \\\\ & \\color{red}{-15} & & \\color{red}{-15} \\end{array}"
