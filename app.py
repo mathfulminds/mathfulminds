@@ -73,9 +73,6 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# --- SWITCHING TO STABLE MODEL TO PREVENT QUOTA ERRORS ---
-MODEL_NAME = 'gemini-1.5-flash'
-
 # --- SESSION STATE ---
 if "step_count" not in st.session_state: st.session_state.step_count = 0
 if "solution_data" not in st.session_state: st.session_state.solution_data = None
@@ -115,11 +112,10 @@ def build_latex_from_lists(step_data):
     num_left = len(left_terms)
     num_right = len(right_terms)
     
-    # If empty lists (simplifying expression), ensure at least 1 col so LaTeX doesn't crash
+    # If empty lists (simplifying expression), ensure at least 1 col
     if num_left == 0 and num_right == 0: return step_data.get("initial_math", "")
 
-    # 2. Build Column Format String (e.g., "c c c | c | c c")
-    # c = center aligned column
+    # 2. Build Column Format String
     cols_latex = "c " * num_left
     if separator:
         cols_latex += "c " # The Separator Column
@@ -127,25 +123,16 @@ def build_latex_from_lists(step_data):
 
     # 3. Build Row 1 (The Math Terms)
     row1_parts = []
-    
-    # Left Zone
     for t in left_terms: row1_parts.append(str(t))
-    
-    # Separator Zone
     if separator: row1_parts.append(separator)
-    
-    # Right Zone
     for t in right_terms: row1_parts.append(str(t))
-    
     row1_str = " & ".join(row1_parts)
 
     # 4. Build Row 2 (The Red Operations)
     if not op_val:
-        # No operation? Return 1-row array
         return f"\\begin{{array}}{{{cols_latex}}} {row1_str} \\end{{array}}"
 
     row2_parts = []
-    
     # Left Operations
     for i in range(num_left):
         if i in targets_left:
@@ -153,7 +140,6 @@ def build_latex_from_lists(step_data):
         else:
             row2_parts.append("") # Empty cell
 
-    # Separator Operation (Empty)
     if separator: row2_parts.append("") 
 
     # Right Operations
@@ -333,11 +319,18 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     RULE 3: If simplifying an expression, leave "separator" and "right_terms" empty.
     """
 
-    model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
-    
     with st.spinner("Generating interactive lesson..."):
         try:
-            response = model.generate_content(final_prompt)
+            # --- SELF-HEALING MODEL SELECTION ---
+            # Attempt 1: Try the specific Stable Flash model
+            try:
+                model = genai.GenerativeModel('gemini-1.5-flash-latest', system_instruction=SYSTEM_INSTRUCTION)
+                response = model.generate_content(final_prompt)
+            except Exception:
+                # Attempt 2: Fallback to the Ultra-Stable 'Pro' model if Flash fails
+                model = genai.GenerativeModel('gemini-pro', system_instruction=SYSTEM_INSTRUCTION)
+                response = model.generate_content(final_prompt)
+            
             clean_json_text = extract_json_from_text(response.text)
             data = json.loads(clean_json_text)
             
@@ -397,7 +390,6 @@ if st.session_state.solution_data:
                                 st.latex(final_val)
                     else:
                         # Fallback for unsolved state: Show just the equation row
-                        # We rebuild it using the builder but without operations
                         fallback_step = step.copy()
                         fallback_step["operation"] = {} # Remove ops
                         fallback_math = build_latex_from_lists(fallback_step)
