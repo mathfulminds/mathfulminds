@@ -5,6 +5,7 @@ from streamlit_drawable_canvas import st_canvas
 import json
 import random
 import re
+import time
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Mathful Minds", page_icon="🧠", layout="wide")
@@ -73,6 +74,10 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
+# --- MODEL SELECTION ---
+# We stick to the ONE model we know works for your key, even if it has quotas.
+MODEL_NAME = 'gemini-flash-latest'
+
 # --- SESSION STATE ---
 if "step_count" not in st.session_state: st.session_state.step_count = 0
 if "solution_data" not in st.session_state: st.session_state.solution_data = None
@@ -102,56 +107,46 @@ def build_latex_from_lists(step_data):
     separator = step_data.get("separator", "")
     right_terms = step_data.get("right_terms", [])
     
-    # Operation Data
     op_data = step_data.get("operation", {})
     op_val = op_data.get("value", "")
     targets_left = op_data.get("target_left", [])
     targets_right = op_data.get("target_right", [])
 
-    # 1. Calculate Columns Needed
     num_left = len(left_terms)
     num_right = len(right_terms)
     
-    # If empty lists (simplifying expression), ensure at least 1 col
     if num_left == 0 and num_right == 0: return step_data.get("initial_math", "")
 
-    # 2. Build Column Format String
     cols_latex = "c " * num_left
-    if separator:
-        cols_latex += "c " # The Separator Column
+    if separator: cols_latex += "c "
     cols_latex += "c " * num_right
 
-    # 3. Build Row 1 (The Math Terms)
     row1_parts = []
     for t in left_terms: row1_parts.append(str(t))
     if separator: row1_parts.append(separator)
     for t in right_terms: row1_parts.append(str(t))
     row1_str = " & ".join(row1_parts)
 
-    # 4. Build Row 2 (The Red Operations)
     if not op_val:
         return f"\\begin{{array}}{{{cols_latex}}} {row1_str} \\end{{array}}"
 
     row2_parts = []
-    # Left Operations
     for i in range(num_left):
         if i in targets_left:
             row2_parts.append(f"\\color{{red}}{{{op_val}}}")
         else:
-            row2_parts.append("") # Empty cell
+            row2_parts.append("")
 
     if separator: row2_parts.append("") 
 
-    # Right Operations
     for i in range(num_right):
         if i in targets_right:
             row2_parts.append(f"\\color{{red}}{{{op_val}}}")
         else:
-            row2_parts.append("") # Empty cell
+            row2_parts.append("")
 
     row2_str = " & ".join(row2_parts)
 
-    # 5. Final Assembly
     return f"""
     \\begin{{array}}{{{cols_latex}}}
     {row1_str} \\\\
@@ -284,24 +279,24 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     else:
         st.warning("⚠️ Please provide a problem first!"); st.stop()
 
-    # --- SYSTEM PROMPT (ANCHORED LIST SYSTEM) ---
+    # --- SYSTEM PROMPT ---
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
-    GOAL: Break the problem into steps using the "Anchored List" method for perfect alignment.
+    GOAL: Break the problem into steps using the "Anchored List" method.
     
     OUTPUT FORMAT: JSON ONLY. 
     
     Structure:
     [
       {
-        "left_terms": ["3x", "+5"],   // List of terms on the left.
-        "separator": "=",             // The symbol in the middle (=, <, >, or "" for expressions).
-        "right_terms": ["20"],        // List of terms on the right.
+        "left_terms": ["3x", "+5"],   // List of terms.
+        "separator": "=",             // Symbol (=, <, >).
+        "right_terms": ["20"],        // List of terms.
         
         "operation": {
-            "value": "-5",              // The math to show in red (e.g. -5, \div 3).
-            "target_left": [1],         // Indices of left_terms to put op under (e.g. [1] puts it under +5).
-            "target_right": [0]         // Indices of right_terms to put op under.
+            "value": "-5",              // The math to show in red.
+            "target_left": [1],         // Indices of left_terms to align under.
+            "target_right": [0]         // Indices of right_terms to align under.
         },
         
         "final_answer": "OPTIONAL: If LAST step, result here (e.g. x=5).",
@@ -313,32 +308,34 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
         ]
       }
     ]
-    
-    RULE 1: Split terms logically. "3x + 5" -> ["3x", "+5"].
-    RULE 2: Indices start at 0.
-    RULE 3: If simplifying an expression, leave "separator" and "right_terms" empty.
+    RULE: If simplifying expression, leave "separator" empty.
     """
 
-    with st.spinner("Generating interactive lesson..."):
-        try:
-            # --- SELF-HEALING MODEL SELECTION ---
-            # Attempt 1: Try the specific Stable Flash model
+    model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
+    
+    with st.spinner("Generating interactive lesson... (If slow, we are retrying due to quota)"):
+        # --- THE RETRY ENGINE ---
+        max_retries = 3
+        success = False
+        
+        for attempt in range(max_retries):
             try:
-                model = genai.GenerativeModel('gemini-1.5-flash-latest', system_instruction=SYSTEM_INSTRUCTION)
                 response = model.generate_content(final_prompt)
-            except Exception:
-                # Attempt 2: Fallback to the Ultra-Stable 'Pro' model if Flash fails
-                model = genai.GenerativeModel('gemini-pro', system_instruction=SYSTEM_INSTRUCTION)
-                response = model.generate_content(final_prompt)
-            
-            clean_json_text = extract_json_from_text(response.text)
-            data = json.loads(clean_json_text)
-            
+                clean_json_text = extract_json_from_text(response.text)
+                data = json.loads(clean_json_text)
+                success = True
+                break # Success! Exit loop
+            except Exception as e:
+                if "429" in str(e) or "404" in str(e): # Speed limit or Model error
+                    time.sleep(5) # Wait 5 seconds
+                    continue # Try again
+                else:
+                    st.error(f"Error: {str(e)}")
+                    break
+
+        if success:
             for step in data:
-                # 1. BUILD THE MATH GRID (Anchored Lists)
                 step["display_math"] = build_latex_from_lists(step)
-                
-                # 2. Shuffle Options
                 raw_options = step.get("options", [])
                 processed_options = []
                 for idx, opt in enumerate(raw_options):
@@ -351,9 +348,8 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
                 step["options"] = processed_options
 
             st.session_state.solution_data = data
-                
-        except Exception as e:
-            st.error(f"I got confused. Try a simpler problem! (Error: {str(e)})")
+        else:
+            st.error("⚠️ The server is too busy right now (Quota Limit). Please wait 30 seconds and try again!")
 
 # --- DISPLAY LOGIC ---
 if st.session_state.solution_data:
@@ -381,7 +377,6 @@ if st.session_state.solution_data:
                         st.latex(display_math)
                         final_val = step.get('final_answer', '')
                         if final_val:
-                            # Render final answer cleanly
                             if "=" in final_val:
                                 lhs, rhs = final_val.split("=", 1)
                                 final_grid = f"\\begin{{array}}{{r c l}} {lhs} & = & {rhs} \\end{{array}}"
@@ -389,9 +384,8 @@ if st.session_state.solution_data:
                             else:
                                 st.latex(final_val)
                     else:
-                        # Fallback for unsolved state: Show just the equation row
                         fallback_step = step.copy()
-                        fallback_step["operation"] = {} # Remove ops
+                        fallback_step["operation"] = {}
                         fallback_math = build_latex_from_lists(fallback_step)
                         st.latex(fallback_math)
             
