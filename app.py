@@ -30,6 +30,12 @@ st.markdown("""
         letter-spacing: -1px;
     }
     
+    /* Force Left Alignment for Math to ensure vertical stacking works */
+    .katex-display {
+        text-align: left !important;
+        margin-left: 2rem !important; /* Indent slightly */
+    }
+    
     div.stButton > button {
         background-color: #FFFFFF;
         color: #1E293B;
@@ -253,13 +259,19 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     - Col 3: Equals (=) -> CENTER ALIGNED
     - Col 4: Right Constant (35) -> RIGHT ALIGNED
     
-    This Right-Alignment ensures that digits stack perfectly (units over units).
-    
     Example "2x + 15 = 35":
     "work_math": "\\begin{array}{r r c r} 2x & + 15 & = & 35 \\\\ & \\color{red}{-15} & & \\color{red}{-15} \\end{array}"
     
     RULE 4: RED DIVISION
     - Use `\color{red}{\div 2}`.
+    
+    RULE 5: FINAL ANSWER ALIGNMENT (CRITICAL)
+    - The "final_answer" MUST use the same array format so the equals sign lines up vertically.
+    - Use `\phantom{}` to act as invisible spacers for the empty slots.
+    
+    Example for x=10:
+    "final_answer": "\\begin{array}{r r c r} x & \\phantom{\\div 2} & = & 10 \\end{array}"
+    (Using phantom ensures the spacing matches the previous step!)
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -312,7 +324,6 @@ if st.session_state.solution_data:
                 initial_math = clean_latex_code(step.get('initial_math', ''))
 
                 if i < st.session_state.step_count:
-                    # Past step -> Show work
                     st.latex(work_math)
                 elif i == st.session_state.step_count:
                     # Current Step
@@ -320,7 +331,7 @@ if st.session_state.solution_data:
                         # Correct -> Show work
                         st.latex(work_math)
                         
-                        # --- CHECK FOR FINAL ANSWER (Move to Left Column) ---
+                        # --- CHECK FOR FINAL ANSWER (Left Column) ---
                         final_ans = clean_latex_code(step.get('final_answer', ''))
                         if final_ans:
                             st.latex(final_ans)
