@@ -77,38 +77,34 @@ def add_text(text):
     st.session_state.user_problem += text
 
 def extract_json_from_text(text):
-    """
-    Hunts for JSON array [...] inside the AI's response text.
-    Protects against the AI adding conversational filler.
-    """
+    """Finds JSON array inside the AI response."""
     try:
-        # Regex to find the first outer bracket pair
         match = re.search(r'\[.*\]', text, re.DOTALL)
         if match:
             return match.group(0)
-        return text # Return original if no brackets found (hope for the best)
+        return text
     except:
         return text
 
+def clean_latex_code(latex_str):
+    """Removes markdown code blocks if the AI adds them."""
+    if not latex_str: return ""
+    # Strip markdown wrappers
+    clean = latex_str.replace("```latex", "").replace("```", "").strip()
+    return clean
+
 def safe_parse_option(option, idx):
-    """
-    Robust parser that handles strings, missing keys, and LaTeX cleaning.
-    """
     if isinstance(option, dict):
         text = str(option.get("text", f"Option {idx+1}"))
         feedback = str(option.get("feedback", ""))
-        # We handle correctness in the main loop to ensure 1 is always true
     else:
         text = str(option)
         feedback = ""
 
-    # Defaults
     if not feedback:
         feedback = "Try again!" if idx != 0 else "Correct!"
 
-    # Clean LaTeX for Button Label
     clean_text = text.replace('$', '').replace('\\', '')
-    
     return text, clean_text, feedback
 
 # --- SIDEBAR ---
@@ -248,18 +244,20 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     RULE 1: ALWAYS PUT THE CORRECT OPTION FIRST (Index 0).
     - I will shuffle them in the app.
     
-    RULE 2: NO REDUNDANCY IN WORK
-    - The "work_math" should ONLY show the red operation.
-    - Do NOT include the result row (answer) for intermediate steps.
+    RULE 2: NO REDUNDANCY
+    - "work_math" should only show operations. No results row.
     
-    RULE 3: "MAGNET" ALIGNMENT
-    - Use this exact array structure: `\begin{array}{r @{\quad=\quad} l}`
-    - Put the LEFT side of the equation in the first column.
-    - Put the RIGHT side of the equation in the second column.
-    - This creates a perfectly centered equals sign that pulls the numbers together.
+    RULE 3: 4-COLUMN ALIGNMENT FOR VERTICAL MATH
+    - Use `\begin{array}{r r c r}`.
+    - Col 1: Variable Term (2x)
+    - Col 2: Left Constant (+15) -> RIGHT ALIGNED
+    - Col 3: Equals (=) -> CENTER ALIGNED
+    - Col 4: Right Constant (35) -> RIGHT ALIGNED
     
-    Example for "2x + 15 = 35":
-    "work_math": "\\begin{array}{r @{\\quad=\\quad} l} 2x + 15 & 35 \\\\ \\color{red}{-15} & \\color{red}{-15} \\end{array}"
+    This Right-Alignment ensures that digits stack perfectly (units over units).
+    
+    Example "2x + 15 = 35":
+    "work_math": "\\begin{array}{r r c r} 2x & + 15 & = & 35 \\\\ & \\color{red}{-15} & & \\color{red}{-15} \\end{array}"
     
     RULE 4: RED DIVISION
     - Use `\color{red}{\div 2}`.
@@ -270,31 +268,21 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     with st.spinner("Generating interactive lesson..."):
         try:
             response = model.generate_content(final_prompt)
-            # --- CRITICAL FIX: Extract JSON only ---
             clean_json_text = extract_json_from_text(response.text)
             data = json.loads(clean_json_text)
             
-            # --- FAIL-SAFE DATA PROCESSING ---
             for step in data:
                 raw_options = step.get("options", [])
-                
-                # 1. Force the structure we need
                 processed_options = []
                 for idx, opt in enumerate(raw_options):
-                    # Parse it safely
                     txt, cln, fb = safe_parse_option(opt, idx)
-                    
-                    # FORCE CORRECTNESS: First option (idx 0) is ALWAYS Correct.
-                    is_correct = (idx == 0) 
-                    
+                    is_correct = (idx == 0)
                     processed_options.append({
                         "text": txt, 
                         "clean_text": cln,
                         "feedback": fb, 
                         "correct": is_correct
                     })
-                
-                # 2. Shuffle them so the user doesn't know the first one is right
                 random.shuffle(processed_options)
                 step["options"] = processed_options
 
@@ -321,8 +309,10 @@ if st.session_state.solution_data:
             with col_math:
                 interaction = st.session_state.interactions.get(i)
                 
-                work_math = step.get('work_math', '')
-                initial_math = step.get('initial_math', '')
+                # --- CLEAN THE LATEX STRINGS ---
+                # This fixes the "Raw Text" issue by stripping Markdown
+                work_math = clean_latex_code(step.get('work_math', ''))
+                initial_math = clean_latex_code(step.get('initial_math', ''))
 
                 if i < st.session_state.step_count:
                     st.latex(work_math)
@@ -337,10 +327,8 @@ if st.session_state.solution_data:
                 interaction = st.session_state.interactions.get(i)
                 
                 if interaction and interaction["correct"]:
-                    # --- SHOW SUCCESS ---
                     sel_idx = interaction["choice"]
                     opt = step['options'][sel_idx]
-                    
                     clean_fb = opt["feedback"].replace('$', '').replace('\\', '')
                     st.success(f"**{opt['text']}**\n\n{clean_fb}")
                     
@@ -353,10 +341,9 @@ if st.session_state.solution_data:
                             st.balloons()
                             st.success("🎉 Problem Complete!")
                             
-                            # --- FINAL ANSWER LOGIC (Separate Row) ---
-                            final_ans = step.get('final_answer', '')
+                            # --- FINAL ANSWER ---
+                            final_ans = clean_latex_code(step.get('final_answer', ''))
                             if final_ans:
-                                # Render as PURE LaTeX, left aligned (default)
                                 st.latex(final_ans)
                                 
                             if st.button("Start New Problem"):
@@ -365,16 +352,13 @@ if st.session_state.solution_data:
                                 st.rerun()
 
                 else:
-                    # --- SHOW ERROR OR OPTIONS ---
                     if interaction and not interaction["correct"]:
                         sel_idx = interaction["choice"]
                         opt = step['options'][sel_idx]
                         clean_fb = opt["feedback"].replace('$', '').replace('\\', '')
                         st.error(f"**{opt['text']}**\n\n{clean_fb}")
 
-                    # Render Buttons
                     for idx, option in enumerate(step['options']):
-                        
                         def on_click(step_i, opt_i, is_corr_val):
                             st.session_state.interactions[step_i] = {"choice": opt_i, "correct": is_corr_val}
                         
