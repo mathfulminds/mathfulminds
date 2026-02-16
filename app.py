@@ -4,6 +4,7 @@ from PIL import Image
 from streamlit_drawable_canvas import st_canvas
 import json
 import random
+import re
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Mathful Minds", page_icon="🧠", layout="wide")
@@ -53,19 +54,6 @@ st.markdown("""
         padding: 10px 20px;
         font-size: 1.1rem;
     }
-    
-    /* Final Answer Styling */
-    .final-answer {
-        font-size: 2rem;
-        font-weight: bold;
-        text-align: center;
-        color: #16A34A;
-        padding: 20px;
-        border: 3px solid #16A34A;
-        border-radius: 12px;
-        background-color: #DCFCE7;
-        margin-top: 20px;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -88,24 +76,37 @@ if "user_problem" not in st.session_state: st.session_state.user_problem = ""
 def add_text(text):
     st.session_state.user_problem += text
 
+def extract_json_from_text(text):
+    """
+    Hunts for JSON array [...] inside the AI's response text.
+    Protects against the AI adding conversational filler.
+    """
+    try:
+        # Regex to find the first outer bracket pair
+        match = re.search(r'\[.*\]', text, re.DOTALL)
+        if match:
+            return match.group(0)
+        return text # Return original if no brackets found (hope for the best)
+    except:
+        return text
+
 def safe_parse_option(option, idx):
     """
     Robust parser that handles strings, missing keys, and LaTeX cleaning.
     """
-    # 1. Parse Data
     if isinstance(option, dict):
         text = str(option.get("text", f"Option {idx+1}"))
         feedback = str(option.get("feedback", ""))
-        # We don't trust the AI's "correct" tag here, we handle it in the main loop
+        # We handle correctness in the main loop to ensure 1 is always true
     else:
         text = str(option)
         feedback = ""
 
-    # 2. Defaults if empty
+    # Defaults
     if not feedback:
         feedback = "Try again!" if idx != 0 else "Correct!"
 
-    # 3. Clean LaTeX for Button Label (Buttons can't show math code)
+    # Clean LaTeX for Button Label
     clean_text = text.replace('$', '').replace('\\', '')
     
     return text, clean_text, feedback
@@ -234,7 +235,7 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
       {
         "initial_math": "LaTeX of the equation BEFORE this step",
         "work_math": "LaTeX showing the vertical work.",
-        "final_answer": "OPTIONAL: If this is the LAST step, put the result here (e.g. x=5).",
+        "final_answer": "OPTIONAL: If this is the LAST step, put the result here (e.g. x=10).",
         "question": "What is the best next step?",
         "options": [
            {"text": "Correct Option", "feedback": "Explanation..."},
@@ -245,22 +246,23 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     ]
     
     RULE 1: ALWAYS PUT THE CORRECT OPTION FIRST (Index 0).
-    - I will shuffle them in the app. You just need to make sure the first one is the right one.
+    - I will shuffle them in the app.
     
     RULE 2: NO REDUNDANCY IN WORK
     - The "work_math" should ONLY show the red operation.
     - Do NOT include the result row (answer) for intermediate steps.
     
-    RULE 3: SIMPLE ALIGNMENT (2 Columns)
-    - To fix alignment, simply put the Left Side in Col 1 (Right Aligned) and Right Side in Col 2 (Left Aligned).
-    - Use `\begin{array}{r l}`.
-    - Put the equals sign in the second column.
+    RULE 3: "MAGNET" ALIGNMENT
+    - Use this exact array structure: `\begin{array}{r @{\quad=\quad} l}`
+    - Put the LEFT side of the equation in the first column.
+    - Put the RIGHT side of the equation in the second column.
+    - This creates a perfectly centered equals sign that pulls the numbers together.
     
     Example for "2x + 15 = 35":
-    "work_math": "\\begin{array}{r l} 2x + 15 &= 35 \\\\ \\color{red}{-15} & \\color{red}{-15} \\end{array}"
+    "work_math": "\\begin{array}{r @{\\quad=\\quad} l} 2x + 15 & 35 \\\\ \\color{red}{-15} & \\color{red}{-15} \\end{array}"
     
     RULE 4: RED DIVISION
-    - Use `\color{red}{\div 2}`. Do NOT use fraction bars.
+    - Use `\color{red}{\div 2}`.
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -268,8 +270,9 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     with st.spinner("Generating interactive lesson..."):
         try:
             response = model.generate_content(final_prompt)
-            text_data = response.text.strip().replace("```json", "").replace("```", "")
-            data = json.loads(text_data)
+            # --- CRITICAL FIX: Extract JSON only ---
+            clean_json_text = extract_json_from_text(response.text)
+            data = json.loads(clean_json_text)
             
             # --- FAIL-SAFE DATA PROCESSING ---
             for step in data:
@@ -338,7 +341,6 @@ if st.session_state.solution_data:
                     sel_idx = interaction["choice"]
                     opt = step['options'][sel_idx]
                     
-                    # Clean feedback display
                     clean_fb = opt["feedback"].replace('$', '').replace('\\', '')
                     st.success(f"**{opt['text']}**\n\n{clean_fb}")
                     
@@ -349,12 +351,13 @@ if st.session_state.solution_data:
                                 st.rerun()
                         else:
                             st.balloons()
-                            # --- SHOW FINAL ANSWER ---
+                            st.success("🎉 Problem Complete!")
+                            
+                            # --- FINAL ANSWER LOGIC (Separate Row) ---
                             final_ans = step.get('final_answer', '')
                             if final_ans:
-                                st.markdown(f'<div class="final-answer">{final_ans}</div>', unsafe_allow_html=True)
-                            else:
-                                st.success("Problem Complete!")
+                                # Render as PURE LaTeX, left aligned (default)
+                                st.latex(final_ans)
                                 
                             if st.button("Start New Problem"):
                                 st.session_state.solution_data = None
