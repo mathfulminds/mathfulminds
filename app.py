@@ -53,13 +53,19 @@ st.markdown("""
         padding: 10px 20px;
         font-size: 1.1rem;
     }
-    .locked-state {
-        color: #94A3B8;
-        font-style: italic;
-        border: 1px dashed #CBD5E1;
+    
+    /* Big Final Answer Box */
+    .final-answer {
+        background-color: #FFFFFF;
+        border: 2px solid #16A34A;
+        border-radius: 10px;
         padding: 20px;
-        border-radius: 8px;
         text-align: center;
+        font-size: 1.5rem;
+        color: #16A34A;
+        font-weight: bold;
+        margin-top: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -84,16 +90,14 @@ def add_text(text):
     st.session_state.user_problem += text
 
 def safe_parse_option(option, idx):
-    """Parses options to ensure they are dictionaries with valid strings."""
     if isinstance(option, dict):
         text = str(option.get("text", f"Option {idx+1}"))
         feedback = str(option.get("feedback", ""))
         correct = option.get("correct", False)
     else:
-        # Fallback for strings
         text = str(option)
         feedback = ""
-        correct = False # Default (overridden by our logic below)
+        correct = False
     
     clean_text = text.replace('$', '').replace('\\', '')
     clean_feedback = feedback.replace('$', '').replace('\\', '')
@@ -126,7 +130,6 @@ with tab_draw:
                 input_image = Image.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA').convert('RGB')
 
 with tab_type:
-    # --- CALCULATOR ---
     calc_basic, calc_funcs, calc_trig = st.tabs(["Basic", "Functions", "Trig"])
     
     with calc_basic:
@@ -212,7 +215,7 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     else:
         st.warning("⚠️ Please provide a problem first!"); st.stop()
 
-    # --- SYSTEM PROMPT ---
+    # --- UPDATED SYSTEM PROMPT FOR VISUALS ---
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
     
@@ -222,32 +225,26 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     [
       {
         "initial_math": "LaTeX of the equation BEFORE this step",
-        "work_math": "LaTeX showing the vertical work.",
+        "work_math": "LaTeX showing the vertical work (RED operations).",
+        "final_answer": "OPTIONAL: If this is the very last step, put the final result here (e.g. x=5).",
         "question": "What is the best next step?",
-        "options": [
-           {"text": "Correct Answer", "correct": true, "feedback": "..."},
-           {"text": "Wrong Answer 1", "correct": false, "feedback": "..."},
-           {"text": "Wrong Answer 2", "correct": false, "feedback": "..."},
-           {"text": "Wrong Answer 3", "correct": false, "feedback": "..."}
-        ]
+        "options": [ ... ]
       }
     ]
     
-    RULE 1: ALWAYS PUT THE CORRECT ANSWER FIRST IN THE LIST.
-    - Option 0 must be the correct one.
-    - Option 1, 2, 3 must be incorrect.
-    - Do NOT scramble them yourself. The app handles shuffling.
+    RULE 1: OPERATIONS ARE RED AND ALIGNED
+    - Use `\color{red}` for all operation symbols and numbers (e.g., -15, \div 2).
+    - Use `\begin{array}{r r c r}` for alignment.
     
-    RULE 2: NO REDUNDANCY IN WORK
-    - Do NOT include the result row (answer) for intermediate steps.
-    - EXCEPTION: For the VERY LAST step, DO include the result row (e.g. x=5).
+    RULE 2: DIVISION FORMAT
+    - Do NOT use fraction bars for the operation step.
+    - Use the division symbol `\div`.
+    - Example:
+      "work_math": "\\begin{array}{r r c r} 2x & & = & 20 \\\\ \\color{red}{\\div 2} & & & \\color{red}{\\div 2} \\end{array}"
     
-    RULE 3: PERFECT ALIGNMENT (Use 4 Columns)
-    - Use `\begin{array}{r r c r}`.
-    - Col 1: Variables (2x)
-    - Col 2: Constants Left (+15) -> RIGHT ALIGNED
-    - Col 3: Equals (=)
-    - Col 4: Constants Right (35) -> RIGHT ALIGNED
+    RULE 3: SEPARATE SOLUTION
+    - The "work_math" for the final step should just show the division/multiplication work.
+    - Include the final answer (e.g., "x=10") in the separate "final_answer" field of the last JSON object.
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -258,22 +255,16 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
             text_data = response.text.strip().replace("```json", "").replace("```", "")
             data = json.loads(text_data)
             
-            # --- CRITICAL FIX: RE-PROCESS DATA ---
-            # This block fixes "Lazy AI" responses (strings) and shuffles options.
+            # --- PROCESS DATA (Shuffle + Fix) ---
             for step in data:
                 raw_options = step.get("options", [])
-                
-                # 1. Standardize all options to Dicts
                 fixed_options = []
                 for idx, opt in enumerate(raw_options):
                     if isinstance(opt, str):
-                        # If AI sent strings, assume First (idx 0) is Correct
-                        is_correct = (idx == 0)
+                        is_correct = (idx == 0) # Assume first is correct if string
                         fixed_options.append({"text": opt, "correct": is_correct, "feedback": ""})
                     elif isinstance(opt, dict):
                         fixed_options.append(opt)
-                
-                # 2. Shuffle options in Python so user doesn't see pattern
                 random.shuffle(fixed_options)
                 step["options"] = fixed_options
 
@@ -328,8 +319,15 @@ if st.session_state.solution_data:
                                 st.session_state.step_count += 1
                                 st.rerun()
                         else:
+                            # --- FINAL SUCCESS STATE ---
                             st.balloons()
                             st.success("🎉 Problem Complete!")
+                            
+                            # SHOW THE FINAL ANSWER BIG
+                            final_ans = step.get('final_answer', '')
+                            if final_ans:
+                                st.latex(final_ans) # Renders "x = 10" in standard math font
+                            
                             if st.button("Start New Problem"):
                                 st.session_state.solution_data = None
                                 st.session_state.step_count = 0
