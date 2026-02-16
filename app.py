@@ -72,8 +72,10 @@ if not api_key:
     if not api_key: st.stop()
 
 genai.configure(api_key=api_key)
-# Switching to 1.5 Flash for better JSON handling
-MODEL_NAME = 'gemini-1.5-flash'
+
+# --- CRITICAL CHANGE: SWITCHING TO PRO MODEL ---
+# Pro handles complex JSON/LaTeX escaping much better than Flash
+MODEL_NAME = 'gemini-1.5-pro'
 
 # --- SESSION STATE ---
 if "step_count" not in st.session_state: st.session_state.step_count = 0
@@ -96,6 +98,7 @@ def extract_json_from_text(text):
 
 def clean_latex_code(latex_str):
     if not latex_str: return ""
+    # Strip markdown wrappers
     clean = latex_str.replace("```latex", "").replace("```", "").strip()
     return clean
 
@@ -226,13 +229,18 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     else:
         st.warning("⚠️ Please provide a problem first!"); st.stop()
 
-    # --- SYSTEM PROMPT (Robust JSON Mode) ---
+    # --- SYSTEM PROMPT (STRICT JSON) ---
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
     
     GOAL: Break the problem into steps.
     
     OUTPUT FORMAT: JSON ONLY.
+    IMPORTANT: You MUST double-escape all LaTeX backslashes in your JSON strings.
+    - WRONG: "\begin{array}"
+    - CORRECT: "\\begin{array}"
+    
+    Structure:
     [
       {
         "initial_math": "LaTeX of the equation BEFORE this step",
@@ -248,32 +256,28 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     ]
     
     RULE 1: CORRECT OPTION FIRST.
-    - Index 0 is always correct. I shuffle later.
+    - Index 0 is always correct.
     
     RULE 2: NO REDUNDANCY.
     - "work_math" shows operations only. No result row.
     
-    RULE 3: FLEXIBLE ALIGNMENT (The "Safe" Grid)
-    - For SIMPLE equations (like 2x+5=15), use the 4-col grid: `\begin{array}{r r c r}`.
-    - For COMPLEX equations (Variables on both sides, or more terms):
-      Use a 3-column grid: `\begin{array}{r c l}`.
+    RULE 3: ALIGNMENT (The "Safe" Grid)
+    - Scenario A (Simple): `\\begin{array}{r r c r}`.
+    - Scenario B (Variables on both sides, Systems): `\\begin{array}{r c l}`.
       Col 1: Left Side (Right Aligned)
       Col 2: Equals (=) (Center)
       Col 3: Right Side (Left Aligned)
-      
-      Example (5x - 3 = 2x + 12):
-      "work_math": "\\begin{array}{r c l} 5x - 3 & = & 2x + 12 \\\\ \\color{red}{-2x} & & \\color{red}{-2x} \\end{array}"
-      (Note: Put the red text in Col 1 and Col 3. It won't be perfectly under the term, but it will be safe).
+      Example: "\\begin{array}{r c l} 5x - 3 & = & 2x + 12 \\\\ \\color{red}{-2x} & & \\color{red}{-2x} \\end{array}"
     
     RULE 4: RED DIVISION
-    - Use `\color{red}{\div 2}`.
+    - Use `\\color{red}{\\div 2}`.
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
     
     with st.spinner("Generating interactive lesson..."):
         try:
-            # Force JSON response type for stability
+            # Enforce JSON MIME type for Pro model
             response = model.generate_content(
                 final_prompt,
                 generation_config={"response_mime_type": "application/json"}
@@ -300,7 +304,7 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
             st.session_state.solution_data = data
                 
         except Exception as e:
-            st.error("I got confused. Try a simpler problem!")
+            st.error(f"I got confused. Try a simpler problem! (Error: {str(e)})")
 
 # --- DISPLAY LOGIC ---
 if st.session_state.solution_data:
