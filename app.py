@@ -30,10 +30,10 @@ st.markdown("""
         letter-spacing: -1px;
     }
     
-    /* Left Align Math */
+    /* Center the math generally, but align content left inside */
     .katex-display {
         text-align: left !important;
-        margin-left: 2rem !important;
+        margin-left: 1rem !important;
         overflow-x: auto;
         overflow-y: hidden;
     }
@@ -72,7 +72,7 @@ if not api_key:
     if not api_key: st.stop()
 
 genai.configure(api_key=api_key)
-# Reverting to Flash because Pro gave a 404 error
+# USING FLASH (Faster, available to everyone)
 MODEL_NAME = 'gemini-1.5-flash'
 
 # --- SESSION STATE ---
@@ -86,26 +86,42 @@ def add_text(text):
     st.session_state.user_problem += text
 
 def extract_json_from_text(text):
-    """
-    AGGRESSIVE CLEANER: Removes markdown and finds the JSON list.
-    """
-    # 1. Strip markdown code block syntax
+    """Aggressively finds the JSON list inside the text."""
     clean_text = text.replace("```json", "").replace("```", "").strip()
-    
-    # 2. Use Regex to find the main list [...]
     try:
         match = re.search(r'\[.*\]', clean_text, re.DOTALL)
-        if match:
-            return match.group(0)
+        if match: return match.group(0)
         return clean_text
     except:
         return clean_text
 
-def clean_latex_code(latex_str):
-    """Removes stray markdown if the AI adds it inside the string."""
-    if not latex_str: return ""
-    clean = latex_str.replace("```latex", "").replace("```", "").strip()
-    return clean
+def build_latex_from_parts(step_data):
+    """
+    THE ARCHITECT: Python builds the LaTeX grid, not the AI.
+    This prevents the AI from breaking the layout.
+    """
+    # 1. Get the raw parts
+    left = step_data.get("left_side", "")
+    right = step_data.get("right_side", "")
+    op_left = step_data.get("op_left", "")
+    op_right = step_data.get("op_right", "")
+    
+    # 2. If it's a simple text explanation (no equation), return it raw
+    if not left and not right:
+        return step_data.get("initial_math", "")
+
+    # 3. If there is NO operation (just showing the equation), align nicely
+    if not op_left and not op_right:
+        return f"\\begin{{array}}{{r c l}} {left} & = & {right} \\end{{array}}"
+
+    # 4. If there IS an operation (adding/dividing), build the 2-row grid
+    # We use color{red} for the operations
+    return f"""
+    \\begin{{array}}{{r c l}}
+    {left} & = & {right} \\\\
+    \\color{{red}}{{{op_left}}} & & \\color{{red}}{{{op_right}}}
+    \\end{{array}}
+    """
 
 def safe_parse_option(option, idx):
     if isinstance(option, dict):
@@ -115,9 +131,7 @@ def safe_parse_option(option, idx):
         text = str(option)
         feedback = ""
 
-    if not feedback:
-        feedback = "Try again!" if idx != 0 else "Correct!"
-
+    if not feedback: feedback = "Try again!" if idx != 0 else "Correct!"
     clean_text = text.replace('$', '').replace('\\', '')
     return text, clean_text, feedback
 
@@ -234,21 +248,24 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     else:
         st.warning("⚠️ Please provide a problem first!"); st.stop()
 
-    # --- SYSTEM PROMPT ---
+    # --- SYSTEM PROMPT (ARCHITECT MODE) ---
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
-    
     GOAL: Break the problem into steps.
     
-    OUTPUT FORMAT: JSON ONLY.
-    IMPORTANT: Do NOT use markdown code blocks (```json). Just output the raw JSON array.
-    IMPORTANT: Double-escape all backslashes. (e.g. use \\begin instead of \begin).
+    OUTPUT FORMAT: JSON ONLY. 
     
+    IMPORTANT: Do NOT write LaTeX arrays. Just give me the parts.
+    
+    Structure:
     [
       {
-        "initial_math": "LaTeX of the equation BEFORE this step",
-        "work_math": "LaTeX showing the vertical work.",
-        "final_answer": "OPTIONAL: If this is the LAST step, put the result here (e.g. x=10).",
+        "left_side": "The left side of the equation (e.g. 5x - 3)",
+        "right_side": "The right side of the equation (e.g. 2x + 12)",
+        "op_left": "The operation to do on the left (e.g. -2x or \div 2). Leave empty if none.",
+        "op_right": "The operation to do on the right (e.g. -2x or \div 2). Leave empty if none.",
+        
+        "final_answer": "OPTIONAL: If this is the LAST step, put result here (e.g. x=5).",
         "question": "What is the best next step?",
         "options": [
            {"text": "Correct Option", "feedback": "Explanation..."},
@@ -258,44 +275,31 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
       }
     ]
     
-    RULE 1: CORRECT OPTION FIRST (Index 0).
-    - I will shuffle them in the app.
-    
-    RULE 2: NO REDUNDANCY.
-    - "work_math" shows operations only.
-    
-    RULE 3: ALIGNMENT (The "Safe" Grid)
-    - Scenario A (Simple): `\\begin{array}{r r c r}`
-    - Scenario B (Complex/Variables on both sides): `\\begin{array}{r c l}` (Right, Center, Left).
-      Put left side in Col 1, Right side in Col 3.
-      Example: "\\begin{array}{r c l} 5x - 3 & = & 2x + 12 \\\\ \\color{red}{-2x} & & \\color{red}{-2x} \\end{array}"
-    
-    RULE 4: RED DIVISION
-    - Use `\\color{red}{\\div 2}`.
+    RULE 1: Correct Option First (Index 0).
+    RULE 2: For Division, use `\div 2`, not fractions.
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
     
     with st.spinner("Generating interactive lesson..."):
         try:
-            # Removed response_mime_type because Flash sometimes struggles with it
             response = model.generate_content(final_prompt)
-            
-            # --- AGGRESSIVE CLEANING ---
             clean_json_text = extract_json_from_text(response.text)
             data = json.loads(clean_json_text)
             
             for step in data:
+                # 1. BUILD THE MATH GRID using Python (The Architect)
+                # We inject a new key 'display_math' to hold the perfect LaTeX
+                step["display_math"] = build_latex_from_parts(step)
+                
+                # 2. Shuffle Options
                 raw_options = step.get("options", [])
                 processed_options = []
                 for idx, opt in enumerate(raw_options):
                     txt, cln, fb = safe_parse_option(opt, idx)
                     is_correct = (idx == 0)
                     processed_options.append({
-                        "text": txt, 
-                        "clean_text": cln,
-                        "feedback": fb, 
-                        "correct": is_correct
+                        "text": txt, "clean_text": cln, "feedback": fb, "correct": is_correct
                     })
                 random.shuffle(processed_options)
                 step["options"] = processed_options
@@ -322,18 +326,35 @@ if st.session_state.solution_data:
             
             with col_math:
                 interaction = st.session_state.interactions.get(i)
-                work_math = clean_latex_code(step.get('work_math', ''))
-                initial_math = clean_latex_code(step.get('initial_math', ''))
+                
+                # USE THE PYTHON-BUILT MATH STRING
+                display_math = step.get("display_math", "")
 
                 if i < st.session_state.step_count:
-                    st.latex(work_math)
+                    st.latex(display_math)
                 elif i == st.session_state.step_count:
                     if interaction and interaction["correct"]:
-                        st.latex(work_math)
-                        final_ans = clean_latex_code(step.get('final_answer', ''))
-                        if final_ans: st.latex(final_ans)
+                        st.latex(display_math)
+                        
+                        # Check for Final Answer (Built Manually for safety)
+                        final_val = step.get('final_answer', '')
+                        if final_val:
+                            # Build a nice final answer grid too
+                            if "=" in final_val:
+                                lhs, rhs = final_val.split("=", 1)
+                                final_grid = f"\\begin{{array}}{{r c l}} {lhs} & = & {rhs} \\end{{array}}"
+                                st.latex(final_grid)
+                            else:
+                                st.latex(final_val)
                     else:
-                        st.latex(initial_math)
+                        # Show just the equation (no operations) if unsolved
+                        # We rebuild it purely from left/right parts to be safe
+                        l = step.get("left_side", "")
+                        r = step.get("right_side", "")
+                        if l and r:
+                            st.latex(f"\\begin{{array}}{{r c l}} {l} & = & {r} \\end{{array}}")
+                        else:
+                            st.latex(step.get("initial_math", "")) # Fallback
             
             with col_interaction:
                 st.markdown(f"**Step {i+1}:** {step.get('question', '')}")
