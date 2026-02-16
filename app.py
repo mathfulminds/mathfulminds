@@ -72,10 +72,8 @@ if not api_key:
     if not api_key: st.stop()
 
 genai.configure(api_key=api_key)
-
-# --- CRITICAL CHANGE: SWITCHING TO PRO MODEL ---
-# Pro handles complex JSON/LaTeX escaping much better than Flash
-MODEL_NAME = 'gemini-1.5-pro'
+# Reverting to Flash because Pro gave a 404 error
+MODEL_NAME = 'gemini-1.5-flash'
 
 # --- SESSION STATE ---
 if "step_count" not in st.session_state: st.session_state.step_count = 0
@@ -88,17 +86,24 @@ def add_text(text):
     st.session_state.user_problem += text
 
 def extract_json_from_text(text):
+    """
+    AGGRESSIVE CLEANER: Removes markdown and finds the JSON list.
+    """
+    # 1. Strip markdown code block syntax
+    clean_text = text.replace("```json", "").replace("```", "").strip()
+    
+    # 2. Use Regex to find the main list [...]
     try:
-        match = re.search(r'\[.*\]', text, re.DOTALL)
+        match = re.search(r'\[.*\]', clean_text, re.DOTALL)
         if match:
             return match.group(0)
-        return text
+        return clean_text
     except:
-        return text
+        return clean_text
 
 def clean_latex_code(latex_str):
+    """Removes stray markdown if the AI adds it inside the string."""
     if not latex_str: return ""
-    # Strip markdown wrappers
     clean = latex_str.replace("```latex", "").replace("```", "").strip()
     return clean
 
@@ -229,18 +234,16 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     else:
         st.warning("⚠️ Please provide a problem first!"); st.stop()
 
-    # --- SYSTEM PROMPT (STRICT JSON) ---
+    # --- SYSTEM PROMPT ---
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
     
     GOAL: Break the problem into steps.
     
     OUTPUT FORMAT: JSON ONLY.
-    IMPORTANT: You MUST double-escape all LaTeX backslashes in your JSON strings.
-    - WRONG: "\begin{array}"
-    - CORRECT: "\\begin{array}"
+    IMPORTANT: Do NOT use markdown code blocks (```json). Just output the raw JSON array.
+    IMPORTANT: Double-escape all backslashes. (e.g. use \\begin instead of \begin).
     
-    Structure:
     [
       {
         "initial_math": "LaTeX of the equation BEFORE this step",
@@ -255,18 +258,16 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
       }
     ]
     
-    RULE 1: CORRECT OPTION FIRST.
-    - Index 0 is always correct.
+    RULE 1: CORRECT OPTION FIRST (Index 0).
+    - I will shuffle them in the app.
     
     RULE 2: NO REDUNDANCY.
-    - "work_math" shows operations only. No result row.
+    - "work_math" shows operations only.
     
     RULE 3: ALIGNMENT (The "Safe" Grid)
-    - Scenario A (Simple): `\\begin{array}{r r c r}`.
-    - Scenario B (Variables on both sides, Systems): `\\begin{array}{r c l}`.
-      Col 1: Left Side (Right Aligned)
-      Col 2: Equals (=) (Center)
-      Col 3: Right Side (Left Aligned)
+    - Scenario A (Simple): `\\begin{array}{r r c r}`
+    - Scenario B (Complex/Variables on both sides): `\\begin{array}{r c l}` (Right, Center, Left).
+      Put left side in Col 1, Right side in Col 3.
       Example: "\\begin{array}{r c l} 5x - 3 & = & 2x + 12 \\\\ \\color{red}{-2x} & & \\color{red}{-2x} \\end{array}"
     
     RULE 4: RED DIVISION
@@ -277,12 +278,10 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     
     with st.spinner("Generating interactive lesson..."):
         try:
-            # Enforce JSON MIME type for Pro model
-            response = model.generate_content(
-                final_prompt,
-                generation_config={"response_mime_type": "application/json"}
-            )
+            # Removed response_mime_type because Flash sometimes struggles with it
+            response = model.generate_content(final_prompt)
             
+            # --- AGGRESSIVE CLEANING ---
             clean_json_text = extract_json_from_text(response.text)
             data = json.loads(clean_json_text)
             
