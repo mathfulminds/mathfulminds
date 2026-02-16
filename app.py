@@ -30,10 +30,12 @@ st.markdown("""
         letter-spacing: -1px;
     }
     
-    /* Force Left Alignment for Math to ensure vertical stacking works */
+    /* Left Align Math for consistency */
     .katex-display {
         text-align: left !important;
-        margin-left: 2rem !important; /* Indent slightly */
+        margin-left: 2rem !important;
+        overflow-x: auto;
+        overflow-y: hidden;
     }
     
     div.stButton > button {
@@ -83,7 +85,6 @@ def add_text(text):
     st.session_state.user_problem += text
 
 def extract_json_from_text(text):
-    """Finds JSON array inside the AI response."""
     try:
         match = re.search(r'\[.*\]', text, re.DOTALL)
         if match:
@@ -93,7 +94,6 @@ def extract_json_from_text(text):
         return text
 
 def clean_latex_code(latex_str):
-    """Removes markdown code blocks if the AI adds them."""
     if not latex_str: return ""
     clean = latex_str.replace("```latex", "").replace("```", "").strip()
     return clean
@@ -225,7 +225,7 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     else:
         st.warning("⚠️ Please provide a problem first!"); st.stop()
 
-    # --- SYSTEM PROMPT ---
+    # --- SYSTEM PROMPT (UNIVERSAL ALGEBRA) ---
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
     
@@ -249,29 +249,31 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     RULE 1: ALWAYS PUT THE CORRECT OPTION FIRST (Index 0).
     - I will shuffle them in the app.
     
-    RULE 2: NO REDUNDANCY
+    RULE 2: NO REDUNDANCY IN WORK
     - "work_math" should only show operations. No results row.
     
-    RULE 3: 4-COLUMN ALIGNMENT FOR VERTICAL MATH
-    - Use `\begin{array}{r r c r}`.
-    - Col 1: Variable Term (2x)
-    - Col 2: Left Constant (+15) -> RIGHT ALIGNED
-    - Col 3: Equals (=) -> CENTER ALIGNED
-    - Col 4: Right Constant (35) -> RIGHT ALIGNED
+    RULE 3: SMART ALIGNMENT (Choose the right one based on the problem)
     
-    Example "2x + 15 = 35":
-    "work_math": "\\begin{array}{r r c r} 2x & + 15 & = & 35 \\\\ & \\color{red}{-15} & & \\color{red}{-15} \\end{array}"
+    [SCENARIO A: Simple Algebra (2x + 5 = 15)]
+      Use `\begin{array}{r r c r}`.
+      Col 1: Variable Term (2x)
+      Col 2: Left Constant (+5) -> RIGHT ALIGNED
+      Col 3: Equals (=) -> CENTER ALIGNED
+      Col 4: Right Constant (15) -> RIGHT ALIGNED
+      Example: "\\begin{array}{r r c r} 2x & + 5 & = & 15 \\\\ & \\color{red}{-5} & & \\color{red}{-5} \\end{array}"
+    
+    [SCENARIO B: Systems of Equations (2x + y = 10, x - y = 5)]
+      Use a multi-column array to align variables.
+      Example: "\\begin{array}{r r r c r} 2x & + & y & = & 10 \\\\ x & - & y & = & 5 \\\\ \\hline 3x & & & = & 15 \\end{array}"
+    
+    [SCENARIO C: Complex/Horizontal (2(x+3) = 10)]
+      Just write the equation normally. Do not force an array if it breaks alignment.
     
     RULE 4: RED DIVISION
     - Use `\color{red}{\div 2}`.
     
-    RULE 5: FINAL ANSWER ALIGNMENT (CRITICAL)
-    - The "final_answer" MUST use the same array format so the equals sign lines up vertically.
-    - Use `\phantom{}` to act as invisible spacers for the empty slots.
-    
-    Example for x=10:
-    "final_answer": "\\begin{array}{r r c r} x & \\phantom{\\div 2} & = & 10 \\end{array}"
-    (Using phantom ensures the spacing matches the previous step!)
+    RULE 5: PHANTOM ALIGNMENT
+    - Use `\phantom{}` in the final answer to keep alignment if needed.
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -317,7 +319,6 @@ if st.session_state.solution_data:
         with st.container():
             col_math, col_interaction = st.columns([1, 1])
             
-            # --- LEFT COLUMN (Math Work) ---
             with col_math:
                 interaction = st.session_state.interactions.get(i)
                 work_math = clean_latex_code(step.get('work_math', ''))
@@ -326,26 +327,18 @@ if st.session_state.solution_data:
                 if i < st.session_state.step_count:
                     st.latex(work_math)
                 elif i == st.session_state.step_count:
-                    # Current Step
                     if interaction and interaction["correct"]:
-                        # Correct -> Show work
                         st.latex(work_math)
-                        
-                        # --- CHECK FOR FINAL ANSWER (Left Column) ---
                         final_ans = clean_latex_code(step.get('final_answer', ''))
-                        if final_ans:
-                            st.latex(final_ans)
+                        if final_ans: st.latex(final_ans)
                     else:
-                        # Unsolved -> Show initial
                         st.latex(initial_math)
             
-            # --- RIGHT COLUMN (Interactions) ---
             with col_interaction:
                 st.markdown(f"**Step {i+1}:** {step.get('question', '')}")
                 interaction = st.session_state.interactions.get(i)
                 
                 if interaction and interaction["correct"]:
-                    # Success State
                     sel_idx = interaction["choice"]
                     opt = step['options'][sel_idx]
                     clean_fb = opt["feedback"].replace('$', '').replace('\\', '')
@@ -363,16 +356,13 @@ if st.session_state.solution_data:
                                 st.session_state.solution_data = None
                                 st.session_state.step_count = 0
                                 st.rerun()
-
                 else:
-                    # Error State
                     if interaction and not interaction["correct"]:
                         sel_idx = interaction["choice"]
                         opt = step['options'][sel_idx]
                         clean_fb = opt["feedback"].replace('$', '').replace('\\', '')
                         st.error(f"**{opt['text']}**\n\n{clean_fb}")
 
-                    # Buttons
                     for idx, option in enumerate(step['options']):
                         def on_click(step_i, opt_i, is_corr_val):
                             st.session_state.interactions[step_i] = {"choice": opt_i, "correct": is_corr_val}
