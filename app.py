@@ -3,6 +3,7 @@ import google.generativeai as genai
 from PIL import Image
 from streamlit_drawable_canvas import st_canvas
 import json
+import random
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Mathful Minds", page_icon="🧠", layout="wide")
@@ -82,20 +83,20 @@ if "user_problem" not in st.session_state: st.session_state.user_problem = ""
 def add_text(text):
     st.session_state.user_problem += text
 
-# --- SAFETY HELPER: Parse Option Data ---
 def safe_parse_option(option, idx):
+    """Parses options to ensure they are dictionaries with valid strings."""
     if isinstance(option, dict):
         text = str(option.get("text", f"Option {idx+1}"))
         feedback = str(option.get("feedback", ""))
         correct = option.get("correct", False)
     else:
+        # Fallback for strings
         text = str(option)
         feedback = ""
-        correct = False
+        correct = False # Default (overridden by our logic below)
     
     clean_text = text.replace('$', '').replace('\\', '')
     clean_feedback = feedback.replace('$', '').replace('\\', '')
-    
     return text, clean_text, clean_feedback, correct
 
 # --- SIDEBAR ---
@@ -223,27 +224,30 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
         "initial_math": "LaTeX of the equation BEFORE this step",
         "work_math": "LaTeX showing the vertical work.",
         "question": "What is the best next step?",
-        "options": [ ... ]
+        "options": [
+           {"text": "Correct Answer", "correct": true, "feedback": "..."},
+           {"text": "Wrong Answer 1", "correct": false, "feedback": "..."},
+           {"text": "Wrong Answer 2", "correct": false, "feedback": "..."},
+           {"text": "Wrong Answer 3", "correct": false, "feedback": "..."}
+        ]
       }
     ]
     
-    RULE 1: NO REDUNDANCY
-    - Do NOT include the result row (answer) for intermediate steps.
-    - EXCEPTION: For the VERY LAST step, DO include the result row (e.g. x=5) so the student sees the final answer.
+    RULE 1: ALWAYS PUT THE CORRECT ANSWER FIRST IN THE LIST.
+    - Option 0 must be the correct one.
+    - Option 1, 2, 3 must be incorrect.
+    - Do NOT scramble them yourself. The app handles shuffling.
     
-    RULE 2: PERFECT ALIGNMENT (Use 4 Columns)
-    - Use `\begin{array}{r r c r}` (Right, Right, Center, Right).
+    RULE 2: NO REDUNDANCY IN WORK
+    - Do NOT include the result row (answer) for intermediate steps.
+    - EXCEPTION: For the VERY LAST step, DO include the result row (e.g. x=5).
+    
+    RULE 3: PERFECT ALIGNMENT (Use 4 Columns)
+    - Use `\begin{array}{r r c r}`.
     - Col 1: Variables (2x)
     - Col 2: Constants Left (+15) -> RIGHT ALIGNED
     - Col 3: Equals (=)
     - Col 4: Constants Right (35) -> RIGHT ALIGNED
-    
-    This Right-Alignment forces digits to stack perfectly (units over units), regardless of digit count.
-    
-    Example for "2x + 15 = 35" (Subtracting 15):
-    "work_math": "\\begin{array}{r r c r} 2x & +15 & = & 35 \\\\ & \\color{red}{-15} & & \\color{red}{-15} \\end{array}"
-    
-    (Notice how -15 will right-align under 35, making the 5s match perfectly.)
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -254,10 +258,26 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
             text_data = response.text.strip().replace("```json", "").replace("```", "")
             data = json.loads(text_data)
             
-            if isinstance(data, dict) and "error" in data:
-                st.error(data["error"])
-            else:
-                st.session_state.solution_data = data
+            # --- CRITICAL FIX: RE-PROCESS DATA ---
+            # This block fixes "Lazy AI" responses (strings) and shuffles options.
+            for step in data:
+                raw_options = step.get("options", [])
+                
+                # 1. Standardize all options to Dicts
+                fixed_options = []
+                for idx, opt in enumerate(raw_options):
+                    if isinstance(opt, str):
+                        # If AI sent strings, assume First (idx 0) is Correct
+                        is_correct = (idx == 0)
+                        fixed_options.append({"text": opt, "correct": is_correct, "feedback": ""})
+                    elif isinstance(opt, dict):
+                        fixed_options.append(opt)
+                
+                # 2. Shuffle options in Python so user doesn't see pattern
+                random.shuffle(fixed_options)
+                step["options"] = fixed_options
+
+            st.session_state.solution_data = data
                 
         except Exception as e:
             st.error("I got confused. Try a simpler problem!")
