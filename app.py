@@ -72,8 +72,9 @@ if not api_key:
     if not api_key: st.stop()
 
 genai.configure(api_key=api_key)
-# USING FLASH (Faster, available to everyone)
-MODEL_NAME = 'gemini-1.5-flash'
+
+# --- REVERTING TO THE MODEL NAME THAT WORKED FOR YOU ---
+MODEL_NAME = 'gemini-flash-latest'
 
 # --- SESSION STATE ---
 if "step_count" not in st.session_state: st.session_state.step_count = 0
@@ -106,7 +107,7 @@ def build_latex_from_parts(step_data):
     op_left = step_data.get("op_left", "")
     op_right = step_data.get("op_right", "")
     
-    # 2. If it's a simple text explanation (no equation), return it raw
+    # 2. If it's a simple text explanation (no equation), return raw
     if not left and not right:
         return step_data.get("initial_math", "")
 
@@ -289,7 +290,6 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
             
             for step in data:
                 # 1. BUILD THE MATH GRID using Python (The Architect)
-                # We inject a new key 'display_math' to hold the perfect LaTeX
                 step["display_math"] = build_latex_from_parts(step)
                 
                 # 2. Shuffle Options
@@ -336,7 +336,7 @@ if st.session_state.solution_data:
                     if interaction and interaction["correct"]:
                         st.latex(display_math)
                         
-                        # Check for Final Answer (Built Manually for safety)
+                        # Check for Final Answer
                         final_val = step.get('final_answer', '')
                         if final_val:
                             # Build a nice final answer grid too
@@ -347,14 +347,12 @@ if st.session_state.solution_data:
                             else:
                                 st.latex(final_val)
                     else:
-                        # Show just the equation (no operations) if unsolved
-                        # We rebuild it purely from left/right parts to be safe
                         l = step.get("left_side", "")
                         r = step.get("right_side", "")
                         if l and r:
                             st.latex(f"\\begin{{array}}{{r c l}} {l} & = & {r} \\end{{array}}")
                         else:
-                            st.latex(step.get("initial_math", "")) # Fallback
+                            st.latex(step.get("initial_math", ""))
             
             with col_interaction:
                 st.markdown(f"**Step {i+1}:** {step.get('question', '')}")
