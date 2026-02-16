@@ -54,18 +54,17 @@ st.markdown("""
         font-size: 1.1rem;
     }
     
-    /* Big Final Answer Box */
+    /* Final Answer Styling */
     .final-answer {
-        background-color: #FFFFFF;
-        border: 2px solid #16A34A;
-        border-radius: 10px;
-        padding: 20px;
-        text-align: center;
-        font-size: 1.5rem;
-        color: #16A34A;
+        font-size: 2rem;
         font-weight: bold;
+        text-align: center;
+        color: #16A34A;
+        padding: 20px;
+        border: 3px solid #16A34A;
+        border-radius: 12px;
+        background-color: #DCFCE7;
         margin-top: 20px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -90,18 +89,26 @@ def add_text(text):
     st.session_state.user_problem += text
 
 def safe_parse_option(option, idx):
+    """
+    Robust parser that handles strings, missing keys, and LaTeX cleaning.
+    """
+    # 1. Parse Data
     if isinstance(option, dict):
         text = str(option.get("text", f"Option {idx+1}"))
         feedback = str(option.get("feedback", ""))
-        correct = option.get("correct", False)
+        # We don't trust the AI's "correct" tag here, we handle it in the main loop
     else:
         text = str(option)
         feedback = ""
-        correct = False
-    
+
+    # 2. Defaults if empty
+    if not feedback:
+        feedback = "Try again!" if idx != 0 else "Correct!"
+
+    # 3. Clean LaTeX for Button Label (Buttons can't show math code)
     clean_text = text.replace('$', '').replace('\\', '')
-    clean_feedback = feedback.replace('$', '').replace('\\', '')
-    return text, clean_text, clean_feedback, correct
+    
+    return text, clean_text, feedback
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -130,6 +137,7 @@ with tab_draw:
                 input_image = Image.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA').convert('RGB')
 
 with tab_type:
+    # --- CALCULATOR ---
     calc_basic, calc_funcs, calc_trig = st.tabs(["Basic", "Functions", "Trig"])
     
     with calc_basic:
@@ -215,7 +223,7 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     else:
         st.warning("⚠️ Please provide a problem first!"); st.stop()
 
-    # --- UPDATED SYSTEM PROMPT FOR VISUALS ---
+    # --- SYSTEM PROMPT ---
     SYSTEM_INSTRUCTION = r"""
     You are Mathful, an Interactive Math Tutor.
     
@@ -225,26 +233,34 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
     [
       {
         "initial_math": "LaTeX of the equation BEFORE this step",
-        "work_math": "LaTeX showing the vertical work (RED operations).",
-        "final_answer": "OPTIONAL: If this is the very last step, put the final result here (e.g. x=5).",
+        "work_math": "LaTeX showing the vertical work.",
+        "final_answer": "OPTIONAL: If this is the LAST step, put the result here (e.g. x=5).",
         "question": "What is the best next step?",
-        "options": [ ... ]
+        "options": [
+           {"text": "Correct Option", "feedback": "Explanation..."},
+           {"text": "Wrong Option", "feedback": "Explanation..."},
+           {"text": "Wrong Option", "feedback": "Explanation..."}
+        ]
       }
     ]
     
-    RULE 1: OPERATIONS ARE RED AND ALIGNED
-    - Use `\color{red}` for all operation symbols and numbers (e.g., -15, \div 2).
-    - Use `\begin{array}{r r c r}` for alignment.
+    RULE 1: ALWAYS PUT THE CORRECT OPTION FIRST (Index 0).
+    - I will shuffle them in the app. You just need to make sure the first one is the right one.
     
-    RULE 2: DIVISION FORMAT
-    - Do NOT use fraction bars for the operation step.
-    - Use the division symbol `\div`.
-    - Example:
-      "work_math": "\\begin{array}{r r c r} 2x & & = & 20 \\\\ \\color{red}{\\div 2} & & & \\color{red}{\\div 2} \\end{array}"
+    RULE 2: NO REDUNDANCY IN WORK
+    - The "work_math" should ONLY show the red operation.
+    - Do NOT include the result row (answer) for intermediate steps.
     
-    RULE 3: SEPARATE SOLUTION
-    - The "work_math" for the final step should just show the division/multiplication work.
-    - Include the final answer (e.g., "x=10") in the separate "final_answer" field of the last JSON object.
+    RULE 3: SIMPLE ALIGNMENT (2 Columns)
+    - To fix alignment, simply put the Left Side in Col 1 (Right Aligned) and Right Side in Col 2 (Left Aligned).
+    - Use `\begin{array}{r l}`.
+    - Put the equals sign in the second column.
+    
+    Example for "2x + 15 = 35":
+    "work_math": "\\begin{array}{r l} 2x + 15 &= 35 \\\\ \\color{red}{-15} & \\color{red}{-15} \\end{array}"
+    
+    RULE 4: RED DIVISION
+    - Use `\color{red}{\div 2}`. Do NOT use fraction bars.
     """
 
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_INSTRUCTION)
@@ -255,18 +271,29 @@ if st.button("🚀 Start Interactive Solve", type="primary", use_container_width
             text_data = response.text.strip().replace("```json", "").replace("```", "")
             data = json.loads(text_data)
             
-            # --- PROCESS DATA (Shuffle + Fix) ---
+            # --- FAIL-SAFE DATA PROCESSING ---
             for step in data:
                 raw_options = step.get("options", [])
-                fixed_options = []
+                
+                # 1. Force the structure we need
+                processed_options = []
                 for idx, opt in enumerate(raw_options):
-                    if isinstance(opt, str):
-                        is_correct = (idx == 0) # Assume first is correct if string
-                        fixed_options.append({"text": opt, "correct": is_correct, "feedback": ""})
-                    elif isinstance(opt, dict):
-                        fixed_options.append(opt)
-                random.shuffle(fixed_options)
-                step["options"] = fixed_options
+                    # Parse it safely
+                    txt, cln, fb = safe_parse_option(opt, idx)
+                    
+                    # FORCE CORRECTNESS: First option (idx 0) is ALWAYS Correct.
+                    is_correct = (idx == 0) 
+                    
+                    processed_options.append({
+                        "text": txt, 
+                        "clean_text": cln,
+                        "feedback": fb, 
+                        "correct": is_correct
+                    })
+                
+                # 2. Shuffle them so the user doesn't know the first one is right
+                random.shuffle(processed_options)
+                step["options"] = processed_options
 
             st.session_state.solution_data = data
                 
@@ -307,11 +334,13 @@ if st.session_state.solution_data:
                 interaction = st.session_state.interactions.get(i)
                 
                 if interaction and interaction["correct"]:
+                    # --- SHOW SUCCESS ---
                     sel_idx = interaction["choice"]
                     opt = step['options'][sel_idx]
-                    orig_text, _, clean_fb, _ = safe_parse_option(opt, sel_idx)
                     
-                    st.success(f"**{orig_text}**\n\n{clean_fb}")
+                    # Clean feedback display
+                    clean_fb = opt["feedback"].replace('$', '').replace('\\', '')
+                    st.success(f"**{opt['text']}**\n\n{clean_fb}")
                     
                     if i == st.session_state.step_count:
                         if i < len(steps) - 1:
@@ -319,35 +348,35 @@ if st.session_state.solution_data:
                                 st.session_state.step_count += 1
                                 st.rerun()
                         else:
-                            # --- FINAL SUCCESS STATE ---
                             st.balloons()
-                            st.success("🎉 Problem Complete!")
-                            
-                            # SHOW THE FINAL ANSWER BIG
+                            # --- SHOW FINAL ANSWER ---
                             final_ans = step.get('final_answer', '')
                             if final_ans:
-                                st.latex(final_ans) # Renders "x = 10" in standard math font
-                            
+                                st.markdown(f'<div class="final-answer">{final_ans}</div>', unsafe_allow_html=True)
+                            else:
+                                st.success("Problem Complete!")
+                                
                             if st.button("Start New Problem"):
                                 st.session_state.solution_data = None
                                 st.session_state.step_count = 0
                                 st.rerun()
 
                 else:
+                    # --- SHOW ERROR OR OPTIONS ---
                     if interaction and not interaction["correct"]:
                         sel_idx = interaction["choice"]
                         opt = step['options'][sel_idx]
-                        orig_text, _, clean_fb, _ = safe_parse_option(opt, sel_idx)
-                        st.error(f"**{orig_text}**\n\n{clean_fb}")
+                        clean_fb = opt["feedback"].replace('$', '').replace('\\', '')
+                        st.error(f"**{opt['text']}**\n\n{clean_fb}")
 
+                    # Render Buttons
                     for idx, option in enumerate(step['options']):
-                        orig_text, clean_btn_text, _, is_corr = safe_parse_option(option, idx)
                         
                         def on_click(step_i, opt_i, is_corr_val):
                             st.session_state.interactions[step_i] = {"choice": opt_i, "correct": is_corr_val}
                         
-                        if st.button(clean_btn_text, key=f"btn_{i}_{idx}"):
-                            on_click(i, idx, is_corr)
+                        if st.button(option["clean_text"], key=f"btn_{i}_{idx}"):
+                            on_click(i, idx, option["correct"])
                             st.rerun()
 
         st.markdown("---")
