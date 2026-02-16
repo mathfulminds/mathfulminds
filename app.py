@@ -89,7 +89,6 @@ def extract_json_from_text(text):
 def clean_latex_code(latex_str):
     """Removes markdown code blocks if the AI adds them."""
     if not latex_str: return ""
-    # Strip markdown wrappers
     clean = latex_str.replace("```latex", "").replace("```", "").strip()
     return clean
 
@@ -306,27 +305,36 @@ if st.session_state.solution_data:
         with st.container():
             col_math, col_interaction = st.columns([1, 1])
             
+            # --- LEFT COLUMN (Math Work) ---
             with col_math:
                 interaction = st.session_state.interactions.get(i)
-                
-                # --- CLEAN THE LATEX STRINGS ---
-                # This fixes the "Raw Text" issue by stripping Markdown
                 work_math = clean_latex_code(step.get('work_math', ''))
                 initial_math = clean_latex_code(step.get('initial_math', ''))
 
                 if i < st.session_state.step_count:
+                    # Past step -> Show work
                     st.latex(work_math)
                 elif i == st.session_state.step_count:
+                    # Current Step
                     if interaction and interaction["correct"]:
+                        # Correct -> Show work
                         st.latex(work_math)
+                        
+                        # --- CHECK FOR FINAL ANSWER (Move to Left Column) ---
+                        final_ans = clean_latex_code(step.get('final_answer', ''))
+                        if final_ans:
+                            st.latex(final_ans)
                     else:
+                        # Unsolved -> Show initial
                         st.latex(initial_math)
             
+            # --- RIGHT COLUMN (Interactions) ---
             with col_interaction:
                 st.markdown(f"**Step {i+1}:** {step.get('question', '')}")
                 interaction = st.session_state.interactions.get(i)
                 
                 if interaction and interaction["correct"]:
+                    # Success State
                     sel_idx = interaction["choice"]
                     opt = step['options'][sel_idx]
                     clean_fb = opt["feedback"].replace('$', '').replace('\\', '')
@@ -340,24 +348,20 @@ if st.session_state.solution_data:
                         else:
                             st.balloons()
                             st.success("🎉 Problem Complete!")
-                            
-                            # --- FINAL ANSWER ---
-                            final_ans = clean_latex_code(step.get('final_answer', ''))
-                            if final_ans:
-                                st.latex(final_ans)
-                                
                             if st.button("Start New Problem"):
                                 st.session_state.solution_data = None
                                 st.session_state.step_count = 0
                                 st.rerun()
 
                 else:
+                    # Error State
                     if interaction and not interaction["correct"]:
                         sel_idx = interaction["choice"]
                         opt = step['options'][sel_idx]
                         clean_fb = opt["feedback"].replace('$', '').replace('\\', '')
                         st.error(f"**{opt['text']}**\n\n{clean_fb}")
 
+                    # Buttons
                     for idx, option in enumerate(step['options']):
                         def on_click(step_i, opt_i, is_corr_val):
                             st.session_state.interactions[step_i] = {"choice": opt_i, "correct": is_corr_val}
