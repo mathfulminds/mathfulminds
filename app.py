@@ -72,7 +72,9 @@ if not api_key:
     if not api_key: st.stop()
 
 genai.configure(api_key=api_key)
-MODEL_NAME = 'gemini-flash-latest'
+
+# --- SWITCHING TO STABLE MODEL TO PREVENT QUOTA ERRORS ---
+MODEL_NAME = 'gemini-1.5-flash'
 
 # --- SESSION STATE ---
 if "step_count" not in st.session_state: st.session_state.step_count = 0
@@ -106,7 +108,6 @@ def build_latex_from_lists(step_data):
     # Operation Data
     op_data = step_data.get("operation", {})
     op_val = op_data.get("value", "")
-    # Indices are lists of integers (e.g. [0, 2]) meaning apply to term 0 and 2
     targets_left = op_data.get("target_left", [])
     targets_right = op_data.get("target_right", [])
 
@@ -125,7 +126,6 @@ def build_latex_from_lists(step_data):
     cols_latex += "c " * num_right
 
     # 3. Build Row 1 (The Math Terms)
-    # Join terms with ' & '
     row1_parts = []
     
     # Left Zone
